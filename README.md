@@ -136,6 +136,19 @@ Client / Agent
        -> requests + Trafilatura (content extraction)
 ```
 
+```mermaid
+flowchart LR
+    A[Client / Agent] --> B[OmniSearch API]
+    B --> C[/search]
+    B --> D[/extract]
+    B --> E[/research]
+    C --> F[SearXNG]
+    D --> G[requests + Trafilatura]
+    E --> H[Planner]
+    H --> F
+    E --> G
+```
+
 Responsibilities are intentionally narrow:
 
 - OmniSearch provides a stable API layer
@@ -198,6 +211,34 @@ The response includes:
 - `search_results_count`: how many search results were returned before extraction
 - `search_debug`: per-query search counts and provider errors for debugging
 - `items`: the extracted research items, with per-item errors when extraction fails
+
+## Demo
+
+Minimal local demo flow:
+
+1. Search:
+
+```bash
+curl -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"fastapi","top_k":3}'
+```
+
+2. Extract:
+
+```bash
+curl -X POST http://localhost:8000/extract \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://fastapi.tiangolo.com/"}'
+```
+
+3. Research:
+
+```bash
+curl -X POST http://localhost:8000/research \
+  -H "Content-Type: application/json" \
+  -d '{"query":"fastapi tutorial","top_k":2}'
+```
 
 ## Notes
 

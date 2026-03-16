@@ -29,6 +29,19 @@ Client / Agent
        -> requests + Trafilatura
 ```
 
+```mermaid
+flowchart LR
+    A[Client / Agent] --> B[OmniSearch API]
+    B --> C[/search]
+    B --> D[/extract]
+    B --> E[/research]
+    C --> F[SearXNG]
+    D --> G[requests + Trafilatura]
+    E --> H[Planner]
+    H --> F
+    E --> G
+```
+
 ## 项目结构
 
 ```text
@@ -219,6 +232,34 @@ curl -X POST http://localhost:8000/research \
 - `search_results_count`：搜索阶段实际返回了多少条结果
 - `search_debug`：每个 query 的搜索结果数和错误信息，方便排查
 - `items`：逐条聚合后的结果；如果某一条抽取失败，会带该条的 `error`
+
+## Demo
+
+本地最小演示流程：
+
+1. 搜索：
+
+```bash
+curl -X POST http://localhost:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"fastapi","top_k":3}'
+```
+
+2. 抽取正文：
+
+```bash
+curl -X POST http://localhost:8000/extract \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://fastapi.tiangolo.com/"}'
+```
+
+3. Research：
+
+```bash
+curl -X POST http://localhost:8000/research \
+  -H "Content-Type: application/json" \
+  -d '{"query":"fastapi tutorial","top_k":2}'
+```
 
 当前还不包含：
 

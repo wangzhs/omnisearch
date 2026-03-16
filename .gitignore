@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 AGENTS.md
 SPEC.md
+LOCAL_ROADMAP.md
