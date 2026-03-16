@@ -31,13 +31,13 @@ Client / Agent
 
 ```mermaid
 flowchart LR
-    A[Client / Agent] --> B[OmniSearch API]
-    B --> C[/search]
-    B --> D[/extract]
-    B --> E[/research]
-    C --> F[SearXNG]
-    D --> G[requests + Trafilatura]
-    E --> H[Planner]
+    A["Client / Agent"] --> B["OmniSearch API"]
+    B --> C["/search"]
+    B --> D["/extract"]
+    B --> E["/research"]
+    C --> F["SearXNG"]
+    D --> G["requests + Trafilatura"]
+    E --> H["Planner"]
     H --> F
     E --> G
 ```
