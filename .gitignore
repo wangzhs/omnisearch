@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+data/
 AGENTS.md
 SPEC.md
 LOCAL_ROADMAP.md

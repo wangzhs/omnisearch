@@ -9,3 +9,6 @@ logs:
 
 api:
 	uvicorn app.main:app --reload --port $${API_PORT:-8000}
+
+sync:
+	python -m app.scripts.sync_stock --tickers "$${TICKERS}" $${REFRESH:+--refresh}

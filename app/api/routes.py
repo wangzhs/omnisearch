@@ -2,11 +2,24 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
 from app.extractors.content import extract_content
+from app.normalizers.stock import extract_candidate_ticker
 from app.providers.searxng import search_web
 from app.research.planners.factory import get_research_planner
 from app.schemas.extract import ExtractRequest, ExtractResponse
 from app.schemas.research import ResearchItem, ResearchRequest, ResearchResponse, ResearchSearchDebugItem
 from app.schemas.search import SearchRequest, SearchResponse, SearchResult
+from app.schemas.stock import (
+    CompanyOverview,
+    CompanyProfile,
+    EventListDebugResponse,
+    Event,
+    FinancialSummary,
+    PriceDaily,
+    PriceListDebugResponse,
+    RiskFlag,
+    TimelineItem,
+)
+from app.services.stock import get_stock_data_service
 
 router = APIRouter()
 
@@ -92,6 +105,14 @@ def research(request: ResearchRequest) -> ResearchResponse:
         if successful_extracts >= request.top_k:
             break
 
+    stock_context = None
+    candidate_ticker = extract_candidate_ticker(request.query)
+    if candidate_ticker:
+        try:
+            stock_context = get_stock_data_service().get_research_context(candidate_ticker)
+        except Exception:
+            stock_context = None
+
     return ResearchResponse(
         query=request.query,
         status="ok",
@@ -99,4 +120,98 @@ def research(request: ResearchRequest) -> ResearchResponse:
         search_results_count=total_search_results,
         search_debug=search_debug,
         items=items,
+        stock_context=stock_context,
     )
+
+
+@router.get("/company/{ticker}", response_model=CompanyProfile)
+def get_company(ticker: str, refresh: bool = False) -> CompanyProfile:
+    try:
+        return get_stock_data_service().get_company(ticker, refresh=refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/company/{ticker}/events", response_model=list[Event] | EventListDebugResponse)
+def get_company_events(ticker: str, limit: int = 20, refresh: bool = False, debug: bool = False) -> list[Event] | EventListDebugResponse:
+    try:
+        if debug:
+            return get_stock_data_service().list_events_with_debug(ticker, limit=limit, refresh=refresh)
+        return get_stock_data_service().list_events(ticker, limit=limit, refresh=refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/company/{ticker}/financials", response_model=list[FinancialSummary])
+def get_company_financials(ticker: str, limit: int = 8, refresh: bool = False) -> list[FinancialSummary]:
+    try:
+        return get_stock_data_service().list_financials(ticker, limit=limit, refresh=refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/company/{ticker}/prices", response_model=list[PriceDaily] | PriceListDebugResponse)
+def get_company_prices(
+    ticker: str,
+    limit: int = 60,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    refresh: bool = False,
+    debug: bool = False,
+) -> list[PriceDaily] | PriceListDebugResponse:
+    try:
+        if debug:
+            return get_stock_data_service().list_prices_with_debug(
+                ticker,
+                limit=limit,
+                start_date=start_date,
+                end_date=end_date,
+                refresh=refresh,
+            )
+        return get_stock_data_service().list_prices(
+            ticker,
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date,
+            refresh=refresh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/company/{ticker}/overview", response_model=CompanyOverview)
+def get_company_overview(ticker: str, refresh: bool = False) -> CompanyOverview:
+    try:
+        return get_stock_data_service().get_overview(ticker, refresh=refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/company/{ticker}/timeline", response_model=list[TimelineItem])
+def get_company_timeline(ticker: str, refresh: bool = False) -> list[TimelineItem]:
+    try:
+        return get_stock_data_service().get_timeline(ticker, refresh=refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/company/{ticker}/risk-flags", response_model=list[RiskFlag])
+def get_company_risk_flags(ticker: str, refresh: bool = False) -> list[RiskFlag]:
+    try:
+        return get_stock_data_service().get_risk_flags(ticker, refresh=refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
