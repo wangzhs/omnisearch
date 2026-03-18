@@ -2,14 +2,14 @@
 
 中文说明见 [README.zh-CN.md](README.zh-CN.md)。
 
-OmniSearch is a local-first tool layer for AI agents.
+OmniSearch is a local-first tool layer for AI agents, now primarily focused on A-share stock data workflows.
 
-It is still not a search engine. It now combines:
+It is still not a search engine. Today the primary use case is the stock data layer, while the original web tooling remains available as supporting capability:
 
 - `/search` backed by SearXNG
 - `/extract` backed by `requests` + Trafilatura
 - `/research` as a minimal search + extract orchestration
-- `GET /company/*` as a vertical A-share stock data layer
+- `GET /company/*` as the primary A-share stock data layer
 
 ## What It Does
 
@@ -21,6 +21,39 @@ OmniSearch exposes one FastAPI service and keeps responsibilities narrow:
 - stock data is normalized into local SQLite and served from `/company/*`
 
 There is no indexing engine, ranking model, auth, billing, admin dashboard, or LLM summarization here.
+
+## Stock API Contract
+
+The stock layer is the primary contract of this repository.
+
+Core internal entities:
+
+- `company_profile`
+- `event`
+- `financial_summary`
+- `price_daily`
+
+Primary endpoint:
+
+- `GET /company/{ticker}/overview`
+
+Supporting stock endpoints:
+
+- `GET /company/{ticker}`
+- `GET /company/{ticker}/events`
+- `GET /company/{ticker}/financials`
+- `GET /company/{ticker}/prices`
+- `GET /company/{ticker}/timeline`
+- `GET /company/{ticker}/risk-flags`
+
+Overview is the recommended entry point for agents because it aggregates:
+
+- normalized company profile
+- latest financial summary
+- latest daily price
+- recent events
+- risk flags
+- `data_status` for company, financials, prices, and events
 
 ## Project Structure
 
@@ -158,6 +191,14 @@ curl -X POST http://localhost:8000/research \
 
 `/research` keeps the existing search + extract flow. If the query contains an A-share ticker such as `000001`, the response also includes `stock_context` when local stock data can be collected.
 
+### Company Overview
+
+Recommended first call for agents:
+
+```bash
+curl "http://localhost:8000/company/000001/overview?refresh=true"
+```
+
 ### Company Profile
 
 ```bash
@@ -206,22 +247,43 @@ curl "http://localhost:8000/company/000001/risk-flags"
 curl "http://localhost:8000/company/002837/prices?limit=5&debug=true"
 ```
 
+### Event Debug
+
+```bash
+curl "http://localhost:8000/company/002837/events?limit=10&refresh=true&debug=true"
+```
+
 ### Local Sync / Warm Cache
 
 ```bash
-python -m app.scripts.sync_stock --tickers 000001,002837 --refresh
+python -m app.scripts.sync_stock --tickers 000001,002837 --refresh --price-limit 60 --event-limit 10
 ```
 
 Or via `make`:
 
 ```bash
-TICKERS=000001,002837 REFRESH=1 make sync
+TICKERS=000001,002837 REFRESH=1 PRICE_LIMIT=60 EVENT_LIMIT=10 make sync
 ```
+
+The sync command warms:
+
+- company profile
+- financial summaries
+- daily prices
+- recent events
+- aggregate overview
+
+The command also prints:
+
+- source-level debug for prices
+- source-level debug for events
+- per-ticker failure summary
 
 ## Notes
 
 - This repo remains a tool layer, not a search engine.
 - The stock layer is intentionally vertical and A-share focused.
+- `/company/{ticker}/overview` is the main stock entry point.
 - Current risk flags are heuristic and deterministic. There is no LLM summarization.
 - `timeline` now emphasizes major financial updates and large price moves.
 - `risk-flags` now surfaces missing data, drawdowns, volatility, and low-margin or negative-growth signals.

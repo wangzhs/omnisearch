@@ -97,6 +97,12 @@ class FakeStockService:
             "latest_price": self.list_prices(ticker, refresh=refresh)[0],
             "recent_events": self.list_events(ticker, refresh=refresh),
             "risk_flags": self.get_risk_flags(ticker, refresh=refresh),
+            "data_status": [
+                {"dataset": "company", "status": "ok", "source": "tushare", "count": 1, "as_of_date": "2026-03-17T00:00:00Z", "message": None},
+                {"dataset": "financials", "status": "ok", "source": "tushare", "count": 1, "as_of_date": "2026-03-16", "message": None},
+                {"dataset": "prices", "status": "ok", "source": "akshare", "count": 1, "as_of_date": "2026-03-13", "message": None},
+                {"dataset": "events", "status": "ok", "source": "cninfo", "count": 1, "as_of_date": "2026-03-16", "message": None},
+            ],
         }
 
     def get_timeline(self, ticker: str, refresh: bool = False):
@@ -132,6 +138,8 @@ def test_company_overview_endpoint_returns_stock_snapshot(monkeypatch) -> None:
     assert payload["company"]["ticker"] == "000001.SZ"
     assert payload["latest_financial"]["net_profit"] == -5.0
     assert payload["risk_flags"][0]["code"] == "negative_net_profit"
+    assert payload["data_status"][0]["dataset"] == "company"
+    assert payload["data_status"][1]["dataset"] == "financials"
     assert "raw" not in payload["company"]
     assert "raw" not in payload["latest_financial"]
     assert "raw" not in payload["latest_price"]
@@ -164,6 +172,9 @@ def test_company_overview_falls_back_when_company_profile_missing(monkeypatch) -
                 "latest_price": self.list_prices(ticker, refresh=refresh)[0],
                 "recent_events": self.list_events(ticker, refresh=refresh),
                 "risk_flags": self.get_risk_flags(ticker, refresh=refresh),
+                "data_status": [
+                    {"dataset": "company", "status": "partial", "source": "fallback", "count": 0, "as_of_date": None, "message": "Using fallback company profile."}
+                ],
             }
 
     monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: PartialStockService())
@@ -227,6 +238,48 @@ def test_prices_fall_back_to_tushare_when_akshare_fails() -> None:
     assert len(prices) == 1
     assert prices[0].trade_date == "2026-03-17"
     assert prices[0].close == 10.1
+
+
+def test_financials_fall_back_to_cached_rows_when_refresh_returns_empty() -> None:
+    class FakeRepository:
+        def __init__(self):
+            self._items = []
+
+        def list_financial_summaries(self, ticker: str, limit: int = 8):
+            return self._items
+
+        def get_last_synced_at(self, dataset: str, ticker: str):
+            return None
+
+        def upsert_financial_summaries(self, ticker: str, items):
+            self._items = items
+            return items
+
+    class EmptyTushareCollector:
+        def fetch_financial_summaries(self, ticker: str, limit: int = 8):
+            return []
+
+    from app.models.stock import FinancialSummary
+    from app.services.stock import StockDataService
+
+    repository = FakeRepository()
+    repository._items = [
+        FinancialSummary(
+            record_id="002837.SZ:2025-09-30:1",
+            ticker="002837.SZ",
+            report_date="2025-09-30",
+            announcement_date="2025-10-14",
+            report_type="1",
+            revenue=1.0,
+            source="tushare",
+        )
+    ]
+    service = StockDataService(repository=repository, tushare_collector=EmptyTushareCollector())
+
+    items = service.list_financials("002837", refresh=True)
+
+    assert len(items) == 1
+    assert items[0].report_date == "2025-09-30"
 
 
 def test_normalize_price_daily_keeps_source_from_raw_payload() -> None:

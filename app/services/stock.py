@@ -16,6 +16,7 @@ from app.normalizers.stock import (
 )
 from app.schemas.stock import (
     CompanyOverview,
+    DatasetStatus,
     EventListDebugResponse,
     EventSourceDebug,
     PriceListDebugResponse,
@@ -124,7 +125,8 @@ class StockDataService:
         items = [normalize_financial_summary(normalized, raw) for raw in raw_items]
         if items:
             self.repository.upsert_financial_summaries(normalized, items)
-        return self.repository.list_financial_summaries(normalized, limit=limit)
+            return self.repository.list_financial_summaries(normalized, limit=limit)
+        return cached
 
     def list_prices(
         self,
@@ -232,8 +234,10 @@ class StockDataService:
 
     def get_overview(self, ticker: str, refresh: bool = False) -> CompanyOverview:
         normalized = normalize_ticker_input(ticker)
+        company_source = "fallback"
         try:
             company = self.get_company(normalized, refresh=refresh)
+            company_source = company.source
         except RuntimeError:
             company = self._build_placeholder_company(normalized)
         events = self.list_events(ticker, limit=5, refresh=refresh)
@@ -248,6 +252,13 @@ class StockDataService:
             latest_price=latest_price,
             recent_events=events,
             risk_flags=risk_flags,
+            data_status=self._build_data_status(
+                company=company,
+                company_source=company_source,
+                financials=financials,
+                prices=prices,
+                events=events,
+            ),
         )
 
     def get_timeline(self, ticker: str, refresh: bool = False) -> list[TimelineItem]:
@@ -484,6 +495,49 @@ class StockDataService:
             status="unknown",
             raw={},
         )
+
+    def _build_data_status(
+        self,
+        company: CompanyProfile,
+        company_source: str,
+        financials: list[FinancialSummary],
+        prices: list[PriceDaily],
+        events: list[Event],
+    ) -> list[DatasetStatus]:
+        return [
+            DatasetStatus(
+                dataset="company",
+                status="ok" if company_source != "fallback" else "partial",
+                source=company_source,
+                count=1 if company_source != "fallback" else 0,
+                as_of_date=company.updated_at,
+                message=None if company_source != "fallback" else "Using fallback company profile.",
+            ),
+            DatasetStatus(
+                dataset="financials",
+                status="ok" if financials else "empty",
+                source=financials[0].source if financials else None,
+                count=len(financials),
+                as_of_date=(financials[0].announcement_date or financials[0].report_date) if financials else None,
+                message=None if financials else "No recent financial summaries available.",
+            ),
+            DatasetStatus(
+                dataset="prices",
+                status="ok" if prices else "empty",
+                source=prices[-1].source if prices else None,
+                count=len(prices),
+                as_of_date=prices[-1].trade_date if prices else None,
+                message=None if prices else "No recent daily price data available.",
+            ),
+            DatasetStatus(
+                dataset="events",
+                status="ok" if events else "empty",
+                source=events[0].source if events else None,
+                count=len(events),
+                as_of_date=events[0].event_date if events and events[0].event_date else None,
+                message=None if events else "No recent disclosure events available.",
+            ),
+        ]
 
 
 _stock_data_service: StockDataService | None = None

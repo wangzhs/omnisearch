@@ -22,6 +22,15 @@ class CompanyProfile(BaseModel):
     updated_at: str | None = None
 
 
+class DatasetStatus(BaseModel):
+    dataset: str
+    status: str
+    source: str | None = None
+    count: int | None = None
+    as_of_date: str | None = None
+    message: str | None = None
+
+
 class Event(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,6 +96,7 @@ class CompanyOverview(BaseModel):
     latest_price: PriceDaily | None = None
     recent_events: list[Event] = Field(default_factory=list)
     risk_flags: list[RiskFlag] = Field(default_factory=list)
+    data_status: list[DatasetStatus] = Field(default_factory=list)
 
 
 class PriceSourceDebug(BaseModel):
