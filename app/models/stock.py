@@ -17,17 +17,25 @@ class CompanyProfile(BaseModel):
     main_business: str | None = None
     business_scope: str | None = None
     source: str
+    dedupe_key: str
+    source_priority: int = 0
     updated_at: str | None = None
     raw: dict = Field(default_factory=dict)
 
 
 class Event(BaseModel):
     event_id: str
+    dedupe_key: str
     ticker: str
     event_date: str | None = None
     title: str
+    raw_title: str | None = None
+    event_type: str | None = None
     category: str | None = None
+    sentiment: str | None = None
+    source_type: str | None = None
     source: str
+    source_priority: int = 0
     url: str | None = None
     summary: str | None = None
     importance: str | None = None
@@ -37,6 +45,7 @@ class Event(BaseModel):
 
 class FinancialSummary(BaseModel):
     record_id: str
+    dedupe_key: str
     ticker: str
     report_date: str
     announcement_date: str | None = None
@@ -49,6 +58,7 @@ class FinancialSummary(BaseModel):
     roe: float | None = None
     gross_margin: float | None = None
     source: str
+    source_priority: int = 0
     updated_at: str | None = None
     raw: dict = Field(default_factory=dict)
 
@@ -56,6 +66,7 @@ class FinancialSummary(BaseModel):
 class PriceDaily(BaseModel):
     ticker: str
     trade_date: str
+    dedupe_key: str
     open: float | None = None
     high: float | None = None
     low: float | None = None
@@ -65,5 +76,6 @@ class PriceDaily(BaseModel):
     change_pct: float | None = None
     turnover_rate: float | None = None
     source: str
+    source_priority: int = 0
     updated_at: str | None = None
     raw: dict = Field(default_factory=dict)

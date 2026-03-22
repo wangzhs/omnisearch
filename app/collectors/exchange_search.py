@@ -1,7 +1,14 @@
 import re
 
 from app.core.config import settings
-from app.normalizers.stock import normalize_ticker_input
+from app.normalizers.stock import (
+    SOURCE_PRIORITY,
+    build_event_dedupe_key,
+    normalize_event_importance,
+    normalize_event_sentiment,
+    normalize_event_type,
+    normalize_ticker_input,
+)
 from app.providers.searxng import search_web
 
 
@@ -83,17 +90,26 @@ class ExchangeSearchCollector:
                     continue
                 seen_urls.add(normalized_url)
                 event_date = self._extract_event_date(item.url, item.title, item.snippet)
+                event_type = normalize_event_type(item.title, "exchange_disclosure")
+                normalized_importance = self._compute_importance(item.title, item.snippet, event_type)
+                normalized_url = self._normalize_event_url(item.url)
                 results.append(
                     {
-                        "event_id": normalized_url,
+                        "event_id": build_event_dedupe_key(normalized, item.title, event_date, normalized_url),
+                        "dedupe_key": build_event_dedupe_key(normalized, item.title, event_date, normalized_url),
                         "ticker": normalized,
                         "event_date": event_date,
                         "title": item.title,
+                        "raw_title": item.title,
+                        "event_type": event_type,
                         "category": "exchange_disclosure",
+                        "sentiment": normalize_event_sentiment(item.title, item.snippet),
+                        "source_type": "exchange_search",
                         "source": self.source,
+                        "source_priority": SOURCE_PRIORITY[self.source],
                         "url": normalized_url,
                         "summary": item.snippet,
-                        "importance": self._compute_importance(item.title, item.snippet),
+                        "importance": normalized_importance,
                         "raw": {
                             "query": query,
                             "title": item.title,
@@ -155,11 +171,11 @@ class ExchangeSearchCollector:
             return True
         return False
 
-    def _compute_importance(self, title: str, snippet: str) -> str:
+    def _compute_importance(self, title: str, snippet: str, event_type: str | None = None) -> str:
         haystack = f"{title} {snippet}"
         if any(keyword in haystack for keyword in self.HIGH_SIGNAL_KEYWORDS):
             return "high"
-        return "medium"
+        return normalize_event_importance(title, snippet, event_type)
 
     def _sort_results(self, results: list[dict]) -> list[dict]:
         return sorted(

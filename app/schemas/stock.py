@@ -1,4 +1,17 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+EventType = Literal[
+    "financial_report",
+    "earnings_forecast",
+    "regulatory_action",
+    "shareholder_change",
+    "capital_operation",
+    "asset_restructuring",
+    "pledge",
+    "general_disclosure",
+]
 
 
 class CompanyProfile(BaseModel):
@@ -22,13 +35,13 @@ class CompanyProfile(BaseModel):
     updated_at: str | None = None
 
 
-class DatasetStatus(BaseModel):
-    dataset: str
-    status: str
+class DataStatus(BaseModel):
+    status: Literal["fresh", "stale", "missing", "failed"]
+    updated_at: str | None = None
     source: str | None = None
-    count: int | None = None
-    as_of_date: str | None = None
-    message: str | None = None
+    ttl_hours: int
+    cache_hit: bool = False
+    error_message: str | None = None
 
 
 class Event(BaseModel):
@@ -38,12 +51,16 @@ class Event(BaseModel):
     ticker: str
     event_date: str | None = None
     title: str
+    raw_title: str | None = None
+    event_type: EventType | None = None
     category: str | None = None
+    sentiment: Literal["positive", "neutral", "negative"] | None = None
+    source_type: Literal["filing", "exchange_search", "news", "derived"] | None = None
     source: str
     url: str | None = None
     summary: str | None = None
     updated_at: str | None = None
-    importance: str | None = None
+    importance: Literal["high", "medium", "low"] | None = None
 
 
 class FinancialSummary(BaseModel):
@@ -90,13 +107,206 @@ class RiskFlag(BaseModel):
     as_of_date: str | None = None
 
 
+class CompanyOverviewCompanySection(BaseModel):
+    data: CompanyProfile | None = None
+    data_status: DataStatus
+
+
+class CompanyOverviewFinancialSection(BaseModel):
+    data: FinancialSummary | None = None
+    data_status: DataStatus
+
+
+class CompanyOverviewPriceSection(BaseModel):
+    data: PriceDaily | None = None
+    data_status: DataStatus
+
+
+class CompanyOverviewEventsSection(BaseModel):
+    data: list[Event] = Field(default_factory=list)
+    data_status: DataStatus
+
+
+class CompanyOverviewRiskFlagsSection(BaseModel):
+    data: list[RiskFlag] = Field(default_factory=list)
+    data_status: DataStatus
+
+
+class OverviewSignal(BaseModel):
+    code: str
+    label: str
+    value: str
+    importance: Literal["high", "medium", "low"]
+    direction: Literal["positive", "neutral", "negative"]
+    evidence: str | None = None
+
+
+class CompanyOverviewSignalsSection(BaseModel):
+    data: list[OverviewSignal] = Field(default_factory=list)
+    data_status: DataStatus
+
+
 class CompanyOverview(BaseModel):
-    company: CompanyProfile
-    latest_financial: FinancialSummary | None = None
-    latest_price: PriceDaily | None = None
-    recent_events: list[Event] = Field(default_factory=list)
-    risk_flags: list[RiskFlag] = Field(default_factory=list)
-    data_status: list[DatasetStatus] = Field(default_factory=list)
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "ticker": "000001.SZ",
+                "company": {
+                    "data": {
+                        "ticker": "000001.SZ",
+                        "name": "Ping An Bank",
+                        "exchange": "SZSE",
+                        "market": "Main Board",
+                        "industry": "Bank",
+                        "area": "Guangdong",
+                        "list_date": "1991-04-03",
+                        "status": "L",
+                        "website": "https://bank.pingan.com",
+                        "chairman": None,
+                        "manager": None,
+                        "employees": None,
+                        "main_business": None,
+                        "business_scope": None,
+                        "source": "tushare",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                    },
+                    "data_status": {
+                        "status": "fresh",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                        "source": "tushare",
+                        "ttl_hours": 24,
+                        "cache_hit": True,
+                        "error_message": None,
+                    },
+                },
+                "latest_financial": {
+                    "data": {
+                        "record_id": "000001.SZ:2025-12-31:annual",
+                        "ticker": "000001.SZ",
+                        "report_date": "2025-12-31",
+                        "announcement_date": "2026-03-16",
+                        "report_type": "annual",
+                        "revenue": 100.0,
+                        "revenue_yoy": -2.0,
+                        "net_profit": -5.0,
+                        "net_profit_yoy": -10.0,
+                        "eps": 0.2,
+                        "roe": 1.0,
+                        "gross_margin": 30.0,
+                        "source": "tushare",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                    },
+                    "data_status": {
+                        "status": "fresh",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                        "source": "tushare",
+                        "ttl_hours": 24,
+                        "cache_hit": True,
+                        "error_message": None,
+                    },
+                },
+                "latest_price": {
+                    "data": {
+                        "ticker": "000001.SZ",
+                        "trade_date": "2026-03-13",
+                        "open": 10.0,
+                        "high": 11.0,
+                        "low": 9.9,
+                        "close": 10.8,
+                        "volume": 1000.0,
+                        "amount": 5000.0,
+                        "change_pct": 9.5,
+                        "turnover_rate": 2.0,
+                        "source": "akshare",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                    },
+                    "data_status": {
+                        "status": "fresh",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                        "source": "akshare",
+                        "ttl_hours": 24,
+                        "cache_hit": True,
+                        "error_message": None,
+                    },
+                },
+                "recent_events": {
+                    "data": [
+                        {
+                            "event_id": "evt-1",
+                            "ticker": "000001.SZ",
+                            "event_date": "2026-03-16",
+                            "title": "Annual report disclosed",
+                            "raw_title": "Annual report disclosed",
+                            "event_type": "financial_report",
+                            "category": "report",
+                            "sentiment": "neutral",
+                            "source_type": "filing",
+                            "source": "cninfo",
+                            "url": "https://example.com/report.pdf",
+                            "summary": "Annual report filing",
+                            "updated_at": "2026-03-17T00:00:00Z",
+                            "importance": "high",
+                        }
+                    ],
+                    "data_status": {
+                        "status": "fresh",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                        "source": "cninfo",
+                        "ttl_hours": 24,
+                        "cache_hit": True,
+                        "error_message": None,
+                    },
+                },
+                "risk_flags": {
+                    "data": [
+                        {
+                            "level": "high",
+                            "code": "negative_net_profit",
+                            "message": "Latest reported net profit is negative.",
+                            "dimension": "financial",
+                            "as_of_date": "2026-03-16",
+                        }
+                    ],
+                    "data_status": {
+                        "status": "fresh",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                        "source": "derived",
+                        "ttl_hours": 24,
+                        "cache_hit": True,
+                        "error_message": None,
+                    },
+                },
+                "signals": {
+                    "data": [
+                        {
+                            "code": "profitability",
+                            "label": "Profitability",
+                            "value": "negative",
+                            "importance": "high",
+                            "direction": "negative",
+                            "evidence": "Latest reported net profit is below zero.",
+                        }
+                    ],
+                    "data_status": {
+                        "status": "fresh",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                        "source": "derived",
+                        "ttl_hours": 24,
+                        "cache_hit": True,
+                        "error_message": None,
+                    },
+                },
+            }
+        }
+    )
+
+    ticker: str
+    company: CompanyOverviewCompanySection
+    latest_financial: CompanyOverviewFinancialSection
+    latest_price: CompanyOverviewPriceSection
+    recent_events: CompanyOverviewEventsSection
+    risk_flags: CompanyOverviewRiskFlagsSection
+    signals: CompanyOverviewSignalsSection
 
 
 class PriceSourceDebug(BaseModel):
@@ -133,7 +343,7 @@ class TimelineItem(BaseModel):
     summary: str | None = None
     url: str | None = None
     source: str
-    importance: str | None = None
+    importance: Literal["high", "medium", "low"] | None = None
 
 
 class StockResearchContext(BaseModel):

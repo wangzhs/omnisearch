@@ -5,9 +5,11 @@ from app.collectors.cninfo import CNInfoCollector
 from app.collectors.exchange_search import ExchangeSearchCollector
 from app.collectors.tushare import TushareCollector
 from app.core.config import settings
+from app.db.base import StockRepository
 from app.db.sqlite import get_repository
 from app.models.stock import CompanyProfile, Event, FinancialSummary, PriceDaily
 from app.normalizers.stock import (
+    get_source_priority,
     normalize_cninfo_event,
     normalize_company_profile,
     normalize_financial_summary,
@@ -16,7 +18,13 @@ from app.normalizers.stock import (
 )
 from app.schemas.stock import (
     CompanyOverview,
-    DatasetStatus,
+    CompanyOverviewCompanySection,
+    CompanyOverviewEventsSection,
+    CompanyOverviewFinancialSection,
+    CompanyOverviewPriceSection,
+    CompanyOverviewRiskFlagsSection,
+    CompanyOverviewSignalsSection,
+    DataStatus,
     EventListDebugResponse,
     EventSourceDebug,
     PriceListDebugResponse,
@@ -24,13 +32,14 @@ from app.schemas.stock import (
     RiskFlag,
     StockResearchContext,
     TimelineItem,
+    OverviewSignal,
 )
 
 
 class StockDataService:
     def __init__(
         self,
-        repository=None,
+        repository: StockRepository | None = None,
         tushare_collector: TushareCollector | None = None,
         cninfo_collector: CNInfoCollector | None = None,
         exchange_search_collector: ExchangeSearchCollector | None = None,
@@ -43,90 +52,22 @@ class StockDataService:
         self.akshare_collector = akshare_collector or AKShareCollector()
 
     def get_company(self, ticker: str, refresh: bool = False) -> CompanyProfile:
-        normalized = normalize_ticker_input(ticker)
-        profile = self.repository.get_company_profile(normalized)
-        if profile and not self._should_refresh("company_profile", normalized, refresh):
-            return profile
-
-        raw = self.tushare_collector.fetch_company_profile(normalized)
-        if not raw:
-            if profile:
-                return profile
-            raise RuntimeError(f"No company profile found for {normalized}")
-
-        normalized_profile = normalize_company_profile(normalized, raw)
-        return self.repository.upsert_company_profile(normalized_profile)
+        company, data_status = self._load_company(normalize_ticker_input(ticker), refresh=refresh)
+        if company is not None:
+            return company
+        raise RuntimeError(data_status.error_message or f"No company profile found for {ticker}")
 
     def list_events(self, ticker: str, limit: int = 20, refresh: bool = False) -> list[Event]:
         return self.list_events_with_debug(ticker=ticker, limit=limit, refresh=refresh).items
 
     def list_events_with_debug(self, ticker: str, limit: int = 20, refresh: bool = False) -> EventListDebugResponse:
         normalized = normalize_ticker_input(ticker)
-        cached = self.repository.list_events(normalized, limit=limit)
-        if cached and not self._should_refresh("event", normalized, refresh):
-            return EventListDebugResponse(
-                ticker=normalized,
-                items=cached,
-                debug=[EventSourceDebug(source="cache", status="hit", count=len(cached), kept_count=len(cached))],
-            )
-
-        debug: list[EventSourceDebug] = []
-        raw_events: list[dict] = []
-        try:
-            raw_events = self.cninfo_collector.fetch_events(normalized, limit=limit)
-            debug.append(
-                EventSourceDebug(
-                    source="cninfo",
-                    status="ok" if raw_events else "empty",
-                    count=len(raw_events),
-                    kept_count=len(raw_events),
-                )
-            )
-        except RuntimeError:
-            debug.append(EventSourceDebug(source="cninfo", status="error", error="fetch_failed"))
-            raw_events = []
-
-        events = [normalize_cninfo_event(normalized, raw) for raw in raw_events]
-
-        if not events:
-            company_name = None
-            try:
-                company_name = self.get_company(normalized, refresh=refresh).name
-            except RuntimeError:
-                company_name = None
-            fallback_payload = self.exchange_search_collector.fetch_events_with_debug(
-                normalized,
-                company_name=company_name,
-                limit=limit,
-            )
-            fallback_raw_events = fallback_payload["items"]
-            debug.append(EventSourceDebug(**fallback_payload["debug"]))
-            events = [Event(**item) for item in fallback_raw_events]
-
-        if events:
-            if refresh:
-                self.repository.replace_events(normalized, events)
-            else:
-                self.repository.upsert_events(normalized, events)
-        latest = self.repository.list_events(normalized, limit=limit)
-        return EventListDebugResponse(
-            ticker=normalized,
-            items=latest,
-            debug=debug,
-        )
+        events, _, debug = self._load_events(normalized, limit=limit, refresh=refresh)
+        return EventListDebugResponse(ticker=normalized, items=events, debug=debug)
 
     def list_financials(self, ticker: str, limit: int = 8, refresh: bool = False) -> list[FinancialSummary]:
-        normalized = normalize_ticker_input(ticker)
-        cached = self.repository.list_financial_summaries(normalized, limit=limit)
-        if cached and not self._should_refresh("financial_summary", normalized, refresh):
-            return cached
-
-        raw_items = self.tushare_collector.fetch_financial_summaries(normalized, limit=limit)
-        items = [normalize_financial_summary(normalized, raw) for raw in raw_items]
-        if items:
-            self.repository.upsert_financial_summaries(normalized, items)
-            return self.repository.list_financial_summaries(normalized, limit=limit)
-        return cached
+        items, _ = self._load_financials(normalize_ticker_input(ticker), limit=limit, refresh=refresh)
+        return items
 
     def list_prices(
         self,
@@ -136,30 +77,14 @@ class StockDataService:
         end_date: str | None = None,
         refresh: bool = False,
     ) -> list[PriceDaily]:
-        normalized = normalize_ticker_input(ticker)
-        cached = self.repository.list_prices(normalized, limit=limit, start_date=start_date, end_date=end_date)
-        if cached and not self._should_refresh("price_daily", normalized, refresh):
-            return list(reversed(cached))
-
-        try:
-            raw_prices = self.akshare_collector.fetch_daily_prices(
-                normalized,
-                limit=limit,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        except RuntimeError:
-            raw_prices = self.tushare_collector.fetch_daily_prices(
-                normalized,
-                limit=limit,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        prices = [normalize_price_daily(normalized, raw) for raw in raw_prices]
-        if prices:
-            self.repository.upsert_prices(normalized, prices)
-        latest = self.repository.list_prices(normalized, limit=limit, start_date=start_date, end_date=end_date)
-        return list(reversed(latest))
+        prices, _, _ = self._load_prices(
+            normalize_ticker_input(ticker),
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date,
+            refresh=refresh,
+        )
+        return prices
 
     def list_prices_with_debug(
         self,
@@ -170,95 +95,46 @@ class StockDataService:
         refresh: bool = False,
     ) -> PriceListDebugResponse:
         normalized = normalize_ticker_input(ticker)
-        cached = self.repository.list_prices(normalized, limit=limit, start_date=start_date, end_date=end_date)
-        if cached and not self._should_refresh("price_daily", normalized, refresh):
-            return PriceListDebugResponse(
-                ticker=normalized,
-                items=list(reversed(cached)),
-                debug=[PriceSourceDebug(source="cache", status="hit", count=len(cached))],
-            )
-
-        debug: list[PriceSourceDebug] = []
-        raw_prices: list[dict] = []
-
-        try:
-            raw_prices = self.akshare_collector.fetch_daily_prices(
-                normalized,
-                limit=limit,
-                start_date=start_date,
-                end_date=end_date,
-            )
-            debug.append(
-                PriceSourceDebug(
-                    source="akshare",
-                    status="ok" if raw_prices else "empty",
-                    count=len(raw_prices),
-                )
-            )
-        except RuntimeError as exc:
-            debug.append(PriceSourceDebug(source="akshare", status="error", error=str(exc)))
-
-        if not raw_prices:
-            try:
-                raw_prices = self.tushare_collector.fetch_daily_prices(
-                    normalized,
-                    limit=limit,
-                    start_date=start_date,
-                    end_date=end_date,
-                )
-                debug.append(
-                    PriceSourceDebug(
-                        source="tushare",
-                        status="ok" if raw_prices else "empty",
-                        count=len(raw_prices),
-                    )
-                )
-            except RuntimeError as exc:
-                debug.append(PriceSourceDebug(source="tushare", status="error", error=str(exc)))
-                raise RuntimeError(
-                    "; ".join(
-                        f"{item.source}:{item.status}" + (f": {item.error}" if item.error else "")
-                        for item in debug
-                    )
-                ) from exc
-
-        prices = [normalize_price_daily(normalized, raw) for raw in raw_prices]
-        if prices:
-            self.repository.upsert_prices(normalized, prices)
-        latest = self.repository.list_prices(normalized, limit=limit, start_date=start_date, end_date=end_date)
-        return PriceListDebugResponse(
-            ticker=normalized,
-            items=list(reversed(latest)),
-            debug=debug,
+        prices, _, debug = self._load_prices(
+            normalized,
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date,
+            refresh=refresh,
         )
+        return PriceListDebugResponse(ticker=normalized, items=prices, debug=debug)
 
     def get_overview(self, ticker: str, refresh: bool = False) -> CompanyOverview:
         normalized = normalize_ticker_input(ticker)
-        company_source = "fallback"
-        try:
-            company = self.get_company(normalized, refresh=refresh)
-            company_source = company.source
-        except RuntimeError:
-            company = self._build_placeholder_company(normalized)
-        events = self.list_events(ticker, limit=5, refresh=refresh)
-        financials = self.list_financials(ticker, limit=4, refresh=refresh)
-        prices = self.list_prices(ticker, limit=30, refresh=refresh)
+        company, company_status = self._load_company(normalized, refresh=refresh)
+        financials, financial_status = self._load_financials(normalized, limit=4, refresh=refresh)
+        prices, price_status, _ = self._load_prices(normalized, limit=30, refresh=refresh)
+        events, event_status, _ = self._load_events(normalized, limit=5, refresh=refresh)
         latest_financial = financials[0] if financials else None
         latest_price = prices[-1] if prices else None
         risk_flags = self.get_risk_flags(ticker, refresh=refresh)
-        return CompanyOverview(
-            company=company,
+        risk_status = self._build_risk_flags_status(
+            financial_status=financial_status,
+            price_status=price_status,
+            event_status=event_status,
+        )
+        signals = self._build_overview_signals(
             latest_financial=latest_financial,
             latest_price=latest_price,
             recent_events=events,
             risk_flags=risk_flags,
-            data_status=self._build_data_status(
-                company=company,
-                company_source=company_source,
-                financials=financials,
-                prices=prices,
-                events=events,
+        )
+        return CompanyOverview(
+            ticker=normalized,
+            company=CompanyOverviewCompanySection(
+                data=company or self._build_placeholder_company(normalized),
+                data_status=company_status,
             ),
+            latest_financial=CompanyOverviewFinancialSection(data=latest_financial, data_status=financial_status),
+            latest_price=CompanyOverviewPriceSection(data=latest_price, data_status=price_status),
+            recent_events=CompanyOverviewEventsSection(data=events, data_status=event_status),
+            risk_flags=CompanyOverviewRiskFlagsSection(data=risk_flags, data_status=risk_status),
+            signals=CompanyOverviewSignalsSection(data=signals, data_status=risk_status),
         )
 
     def get_timeline(self, ticker: str, refresh: bool = False) -> list[TimelineItem]:
@@ -276,7 +152,7 @@ class StockDataService:
                     summary=event.summary,
                     url=event.url,
                     source=event.source,
-                    importance=event.importance or ("high" if event.category else "medium"),
+                    importance=event.importance or ("high" if event.event_type else "medium"),
                 )
             )
 
@@ -441,13 +317,252 @@ class StockDataService:
     def get_research_context(self, ticker: str, refresh: bool = False) -> StockResearchContext:
         overview = self.get_overview(ticker, refresh=refresh)
         return StockResearchContext(
-            ticker=overview.company.ticker,
-            company=overview.company,
-            recent_events=overview.recent_events,
-            latest_financial=overview.latest_financial,
-            latest_price=overview.latest_price,
-            risk_flags=overview.risk_flags,
+            ticker=overview.ticker,
+            company=overview.company.data,
+            recent_events=overview.recent_events.data,
+            latest_financial=overview.latest_financial.data,
+            latest_price=overview.latest_price.data,
+            risk_flags=overview.risk_flags.data,
         )
+
+    def _load_company(self, ticker: str, refresh: bool = False) -> tuple[CompanyProfile | None, DataStatus]:
+        cached = self.repository.get_company_profile(ticker)
+        last_synced_at = self.repository.get_last_synced_at("company_profile", ticker)
+        if cached and not self._should_refresh("company_profile", ticker, refresh):
+            return cached, self._build_data_status(
+                source=cached.source,
+                updated_at=cached.updated_at or last_synced_at,
+                cache_hit=True,
+            )
+
+        try:
+            raw = self.tushare_collector.fetch_company_profile(ticker)
+        except RuntimeError as exc:
+            if cached:
+                return cached, self._build_data_status(
+                    source=cached.source,
+                    updated_at=cached.updated_at or last_synced_at,
+                    cache_hit=True,
+                    error_message=str(exc),
+                )
+            return None, self._build_data_status(
+                source="tushare",
+                updated_at=last_synced_at,
+                error_message=str(exc),
+                failed=True,
+            )
+
+        if raw:
+            profile = self.repository.upsert_company_profile(normalize_company_profile(ticker, raw))
+            return profile, self._build_data_status(source=profile.source, updated_at=profile.updated_at, cache_hit=False)
+
+        if cached:
+            return cached, self._build_data_status(
+                source=cached.source,
+                updated_at=cached.updated_at or last_synced_at,
+                cache_hit=True,
+                error_message="Upstream returned empty company profile.",
+            )
+        return None, self._build_data_status(source="tushare", updated_at=None, cache_hit=False, missing=True)
+
+    def _load_financials(
+        self,
+        ticker: str,
+        limit: int = 8,
+        refresh: bool = False,
+    ) -> tuple[list[FinancialSummary], DataStatus]:
+        cached = self.repository.list_financial_summaries(ticker, limit=limit)
+        last_synced_at = self.repository.get_last_synced_at("financial_summary", ticker)
+        if cached and not self._should_refresh("financial_summary", ticker, refresh):
+            return cached, self._build_data_status(
+                source=cached[0].source,
+                updated_at=last_synced_at or cached[0].updated_at,
+                cache_hit=True,
+            )
+
+        try:
+            raw_items = self.tushare_collector.fetch_financial_summaries(ticker, limit=limit)
+        except RuntimeError as exc:
+            if cached:
+                return cached, self._build_data_status(
+                    source=cached[0].source,
+                    updated_at=last_synced_at or cached[0].updated_at,
+                    cache_hit=True,
+                    error_message=str(exc),
+                )
+            return [], self._build_data_status(
+                source="tushare",
+                updated_at=last_synced_at,
+                error_message=str(exc),
+                failed=True,
+            )
+
+        items = [normalize_financial_summary(ticker, raw) for raw in raw_items]
+        if items:
+            stored = self.repository.upsert_financial_summaries(ticker, items)
+            latest = self.repository.list_financial_summaries(ticker, limit=limit) or stored
+            return latest, self._build_data_status(
+                source=latest[0].source,
+                updated_at=latest[0].updated_at or last_synced_at,
+                cache_hit=False,
+            )
+        if cached:
+            return cached, self._build_data_status(
+                source=cached[0].source,
+                updated_at=last_synced_at or cached[0].updated_at,
+                cache_hit=True,
+                error_message="Upstream returned empty financial summaries.",
+            )
+        return [], self._build_data_status(source="tushare", updated_at=None, cache_hit=False, missing=True)
+
+    def _load_prices(
+        self,
+        ticker: str,
+        limit: int = 60,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        refresh: bool = False,
+    ) -> tuple[list[PriceDaily], DataStatus, list[PriceSourceDebug]]:
+        cached = self.repository.list_prices(ticker, limit=limit, start_date=start_date, end_date=end_date)
+        last_synced_at = self.repository.get_last_synced_at("price_daily", ticker)
+        if cached and not self._should_refresh("price_daily", ticker, refresh):
+            items = list(reversed(cached))
+            return items, self._build_data_status(
+                source=items[-1].source,
+                updated_at=last_synced_at or items[-1].updated_at,
+                cache_hit=True,
+            ), [PriceSourceDebug(source="cache", status="hit", count=len(items))]
+
+        debug: list[PriceSourceDebug] = []
+        raw_prices: list[dict] = []
+        last_error: str | None = None
+        for source_name, collector in (
+            ("akshare", self.akshare_collector.fetch_daily_prices),
+            ("tushare", self.tushare_collector.fetch_daily_prices),
+        ):
+            try:
+                raw_prices = collector(ticker, limit=limit, start_date=start_date, end_date=end_date)
+                debug.append(PriceSourceDebug(source=source_name, status="ok" if raw_prices else "empty", count=len(raw_prices)))
+            except RuntimeError as exc:
+                last_error = str(exc)
+                debug.append(PriceSourceDebug(source=source_name, status="error", count=0, error=last_error))
+                raw_prices = []
+            if raw_prices:
+                break
+
+        prices = [normalize_price_daily(ticker, raw) for raw in raw_prices]
+        if prices:
+            self.repository.upsert_prices(ticker, prices)
+            latest = list(reversed(self.repository.list_prices(ticker, limit=limit, start_date=start_date, end_date=end_date)))
+            return latest, self._build_data_status(
+                source=latest[-1].source,
+                updated_at=last_synced_at or latest[-1].updated_at,
+                cache_hit=False,
+            ), debug
+        if cached:
+            items = list(reversed(cached))
+            return items, self._build_data_status(
+                source=items[-1].source,
+                updated_at=last_synced_at or items[-1].updated_at,
+                cache_hit=True,
+                error_message=last_error or "Upstream returned empty price rows.",
+            ), debug
+        if last_error:
+            return [], self._build_data_status(
+                source="akshare",
+                updated_at=last_synced_at,
+                error_message=last_error,
+                failed=True,
+            ), debug
+        return [], self._build_data_status(source=None, updated_at=None, cache_hit=False, missing=True), debug
+
+    def _load_events(
+        self,
+        ticker: str,
+        limit: int = 20,
+        refresh: bool = False,
+    ) -> tuple[list[Event], DataStatus, list[EventSourceDebug]]:
+        cached = self.repository.list_events(ticker, limit=limit)
+        last_synced_at = self.repository.get_last_synced_at("event", ticker)
+        if cached and not self._should_refresh("event", ticker, refresh):
+            return cached, self._build_data_status(
+                source=cached[0].source,
+                updated_at=last_synced_at or cached[0].updated_at,
+                cache_hit=True,
+            ), [EventSourceDebug(source="cache", status="hit", count=len(cached), kept_count=len(cached))]
+
+        debug: list[EventSourceDebug] = []
+        collected: list[Event] = []
+        error_message: str | None = None
+        try:
+            cninfo_raw = self.cninfo_collector.fetch_events(ticker, limit=limit)
+            normalized_events = [normalize_cninfo_event(ticker, raw) for raw in cninfo_raw]
+            collected.extend(normalized_events)
+            debug.append(
+                EventSourceDebug(
+                    source="cninfo",
+                    status="ok" if cninfo_raw else "empty",
+                    count=len(cninfo_raw),
+                    kept_count=len(normalized_events),
+                )
+            )
+        except RuntimeError as exc:
+            error_message = str(exc)
+            debug.append(EventSourceDebug(source="cninfo", status="error", count=0, kept_count=0, error=error_message))
+
+        company_name = None
+        if not collected:
+            company, _ = self._load_company(ticker, refresh=refresh)
+            company_name = company.name if company else None
+            try:
+                fallback_payload = self.exchange_search_collector.fetch_events_with_debug(
+                    ticker,
+                    company_name=company_name,
+                    limit=limit,
+                )
+                fallback_events = [Event(**item) for item in fallback_payload["items"]]
+                collected.extend(fallback_events)
+                debug.append(EventSourceDebug(**fallback_payload["debug"]))
+            except RuntimeError as exc:
+                error_message = str(exc)
+                debug.append(
+                    EventSourceDebug(
+                        source="exchange_search",
+                        status="error",
+                        count=0,
+                        kept_count=0,
+                        error=error_message,
+                    )
+                )
+
+        deduped = self._dedupe_events(collected, limit=limit)
+        if deduped:
+            if refresh:
+                self.repository.replace_events(ticker, deduped)
+            else:
+                self.repository.upsert_events(ticker, deduped)
+            latest = self.repository.list_events(ticker, limit=limit)
+            return latest, self._build_data_status(
+                source=latest[0].source,
+                updated_at=last_synced_at or latest[0].updated_at,
+                cache_hit=False,
+                error_message=error_message,
+            ), debug
+        if cached:
+            return cached, self._build_data_status(
+                source=cached[0].source,
+                updated_at=last_synced_at or cached[0].updated_at,
+                cache_hit=True,
+                error_message=error_message or "No upstream event rows returned.",
+            ), debug
+        if error_message:
+            return [], self._build_data_status(
+                source="cninfo",
+                updated_at=last_synced_at,
+                error_message=error_message,
+                failed=True,
+            ), debug
+        return [], self._build_data_status(source=None, updated_at=None, cache_hit=False, missing=True), debug
 
     def _should_refresh(self, dataset: str, ticker: str, force_refresh: bool) -> bool:
         if force_refresh:
@@ -461,6 +576,15 @@ class StockDataService:
             return True
         ttl = timedelta(hours=settings.stock_data_ttl_hours)
         return synced_at + ttl <= datetime.now(timezone.utc)
+
+    def _is_stale(self, updated_at: str | None) -> bool:
+        if not updated_at:
+            return True
+        try:
+            synced_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        return synced_at + timedelta(hours=settings.stock_data_ttl_hours) <= datetime.now(timezone.utc)
 
     def _build_financial_summary_text(self, item: FinancialSummary) -> str:
         parts = [
@@ -492,52 +616,144 @@ class StockDataService:
         return CompanyProfile(
             ticker=ticker,
             source="fallback",
+            dedupe_key=ticker,
+            source_priority=get_source_priority("fallback"),
             status="unknown",
             raw={},
         )
 
     def _build_data_status(
         self,
-        company: CompanyProfile,
-        company_source: str,
-        financials: list[FinancialSummary],
-        prices: list[PriceDaily],
-        events: list[Event],
-    ) -> list[DatasetStatus]:
-        return [
-            DatasetStatus(
-                dataset="company",
-                status="ok" if company_source != "fallback" else "partial",
-                source=company_source,
-                count=1 if company_source != "fallback" else 0,
-                as_of_date=company.updated_at,
-                message=None if company_source != "fallback" else "Using fallback company profile.",
-            ),
-            DatasetStatus(
-                dataset="financials",
-                status="ok" if financials else "empty",
-                source=financials[0].source if financials else None,
-                count=len(financials),
-                as_of_date=(financials[0].announcement_date or financials[0].report_date) if financials else None,
-                message=None if financials else "No recent financial summaries available.",
-            ),
-            DatasetStatus(
-                dataset="prices",
-                status="ok" if prices else "empty",
-                source=prices[-1].source if prices else None,
-                count=len(prices),
-                as_of_date=prices[-1].trade_date if prices else None,
-                message=None if prices else "No recent daily price data available.",
-            ),
-            DatasetStatus(
-                dataset="events",
-                status="ok" if events else "empty",
-                source=events[0].source if events else None,
-                count=len(events),
-                as_of_date=events[0].event_date if events and events[0].event_date else None,
-                message=None if events else "No recent disclosure events available.",
-            ),
-        ]
+        source: str | None,
+        updated_at: str | None,
+        cache_hit: bool,
+        error_message: str | None = None,
+        missing: bool = False,
+        failed: bool = False,
+    ) -> DataStatus:
+        if failed:
+            status = "failed"
+        elif missing or source is None:
+            status = "missing"
+        elif self._is_stale(updated_at):
+            status = "stale"
+        else:
+            status = "fresh"
+        return DataStatus(
+            status=status,
+            updated_at=updated_at,
+            source=source,
+            ttl_hours=settings.stock_data_ttl_hours,
+            cache_hit=cache_hit,
+            error_message=error_message,
+        )
+
+    def _build_risk_flags_status(
+        self,
+        financial_status: DataStatus,
+        price_status: DataStatus,
+        event_status: DataStatus,
+    ) -> DataStatus:
+        component_statuses = [financial_status.status, price_status.status, event_status.status]
+        updated_candidates = [status.updated_at for status in (financial_status, price_status, event_status) if status.updated_at]
+        if all(status == "missing" for status in component_statuses):
+            status = "missing"
+        elif "failed" in component_statuses:
+            status = "failed"
+        elif "stale" in component_statuses:
+            status = "stale"
+        else:
+            status = "fresh"
+        return DataStatus(
+            status=status,
+            updated_at=max(updated_candidates) if updated_candidates else None,
+            source="derived",
+            ttl_hours=settings.stock_data_ttl_hours,
+            cache_hit=True,
+            error_message=None,
+        )
+
+    def _dedupe_events(self, events: list[Event], limit: int) -> list[Event]:
+        deduped: dict[str, Event] = {}
+        for event in events:
+            key = event.dedupe_key or event.event_id
+            existing = deduped.get(key)
+            if existing is None:
+                deduped[key] = event
+                continue
+            if event.source_priority > existing.source_priority:
+                deduped[key] = event
+                continue
+            if event.source_priority == existing.source_priority and (event.updated_at or "") > (existing.updated_at or ""):
+                deduped[key] = event
+        return sorted(
+            deduped.values(),
+            key=lambda item: ((item.event_date or ""), item.importance or "", item.updated_at or ""),
+            reverse=True,
+        )[:limit]
+
+    def _build_overview_signals(
+        self,
+        latest_financial: FinancialSummary | None,
+        latest_price: PriceDaily | None,
+        recent_events: list[Event],
+        risk_flags: list[RiskFlag],
+    ) -> list[OverviewSignal]:
+        signals: list[OverviewSignal] = []
+        if latest_financial:
+            direction = "negative" if (latest_financial.net_profit or 0) < 0 else "positive"
+            value = "negative" if direction == "negative" else "positive"
+            evidence = (
+                "Latest reported net profit is below zero."
+                if direction == "negative"
+                else "Latest reported net profit is positive."
+            )
+            signals.append(
+                OverviewSignal(
+                    code="profitability",
+                    label="Profitability",
+                    value=value,
+                    importance="high" if direction == "negative" else "medium",
+                    direction=direction,
+                    evidence=evidence,
+                )
+            )
+        if latest_price and latest_price.change_pct is not None:
+            direction = "positive" if latest_price.change_pct > 0 else "negative" if latest_price.change_pct < 0 else "neutral"
+            signals.append(
+                OverviewSignal(
+                    code="latest_price_move",
+                    label="Latest Price Move",
+                    value=f"{latest_price.change_pct}%",
+                    importance="high" if abs(latest_price.change_pct) >= 7 else "medium",
+                    direction=direction,
+                    evidence=f"Latest daily change_pct is {latest_price.change_pct}%.",
+                )
+            )
+        if recent_events:
+            signals.append(
+                OverviewSignal(
+                    code="disclosure_activity",
+                    label="Disclosure Activity",
+                    value=str(len(recent_events)),
+                    importance="medium" if len(recent_events) >= 3 else "low",
+                    direction="neutral",
+                    evidence=f"{len(recent_events)} recent disclosure events are available.",
+                )
+            )
+        if risk_flags:
+            highest_level = "high" if any(flag.level == "high" for flag in risk_flags) else "medium" if any(flag.level == "medium" for flag in risk_flags) else "low"
+            signals.append(
+                OverviewSignal(
+                    code="risk_flag_pressure",
+                    label="Risk Flag Pressure",
+                    value=highest_level,
+                    importance=highest_level,
+                    direction="negative" if highest_level in {"high", "medium"} else "neutral",
+                    evidence=f"{len(risk_flags)} risk flags generated from current data.",
+                )
+            )
+        return signals
 
 
 _stock_data_service: StockDataService | None = None

@@ -1,8 +1,19 @@
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.schemas.stock import CompanyOverview
 from app.normalizers.stock import normalize_price_daily
 from app.schemas.search import SearchResult
+
+SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
+
+
+def assert_matches_snapshot(name: str, payload: dict) -> None:
+    expected = json.loads((SNAPSHOT_DIR / name).read_text(encoding="utf-8"))
+    assert payload == expected
 
 
 class FakeStockService:
@@ -34,11 +45,16 @@ class FakeStockService:
                 "ticker": "000001.SZ",
                 "event_date": "2026-03-16",
                 "title": "Annual report disclosed",
+                "raw_title": "Annual report disclosed",
+                "event_type": "financial_report",
                 "category": "report",
+                "sentiment": "neutral",
+                "source_type": "filing",
                 "source": "cninfo",
                 "url": "https://example.com/report.pdf",
                 "summary": "Annual report filing",
                 "updated_at": "2026-03-17T00:00:00Z",
+                "importance": "high",
                 "raw": {},
             }
         ]
@@ -92,17 +108,82 @@ class FakeStockService:
 
     def get_overview(self, ticker: str, refresh: bool = False):
         return {
-            "company": self.get_company(ticker, refresh=refresh),
-            "latest_financial": self.list_financials(ticker, refresh=refresh)[0],
-            "latest_price": self.list_prices(ticker, refresh=refresh)[0],
-            "recent_events": self.list_events(ticker, refresh=refresh),
-            "risk_flags": self.get_risk_flags(ticker, refresh=refresh),
-            "data_status": [
-                {"dataset": "company", "status": "ok", "source": "tushare", "count": 1, "as_of_date": "2026-03-17T00:00:00Z", "message": None},
-                {"dataset": "financials", "status": "ok", "source": "tushare", "count": 1, "as_of_date": "2026-03-16", "message": None},
-                {"dataset": "prices", "status": "ok", "source": "akshare", "count": 1, "as_of_date": "2026-03-13", "message": None},
-                {"dataset": "events", "status": "ok", "source": "cninfo", "count": 1, "as_of_date": "2026-03-16", "message": None},
-            ],
+            "ticker": "000001.SZ",
+            "company": {
+                "data": self.get_company(ticker, refresh=refresh),
+                "data_status": {
+                    "status": "fresh",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                    "source": "tushare",
+                    "ttl_hours": 24,
+                    "cache_hit": True,
+                    "error_message": None,
+                },
+            },
+            "latest_financial": {
+                "data": self.list_financials(ticker, refresh=refresh)[0],
+                "data_status": {
+                    "status": "fresh",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                    "source": "tushare",
+                    "ttl_hours": 24,
+                    "cache_hit": True,
+                    "error_message": None,
+                },
+            },
+            "latest_price": {
+                "data": self.list_prices(ticker, refresh=refresh)[0],
+                "data_status": {
+                    "status": "fresh",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                    "source": "akshare",
+                    "ttl_hours": 24,
+                    "cache_hit": True,
+                    "error_message": None,
+                },
+            },
+            "recent_events": {
+                "data": self.list_events(ticker, refresh=refresh),
+                "data_status": {
+                    "status": "fresh",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                    "source": "cninfo",
+                    "ttl_hours": 24,
+                    "cache_hit": True,
+                    "error_message": None,
+                },
+            },
+            "risk_flags": {
+                "data": self.get_risk_flags(ticker, refresh=refresh),
+                "data_status": {
+                    "status": "fresh",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                    "source": "derived",
+                    "ttl_hours": 24,
+                    "cache_hit": True,
+                    "error_message": None,
+                },
+            },
+            "signals": {
+                "data": [
+                    {
+                        "code": "profitability",
+                        "label": "Profitability",
+                        "value": "negative",
+                        "importance": "high",
+                        "direction": "negative",
+                        "evidence": "Latest reported net profit is below zero.",
+                    }
+                ],
+                "data_status": {
+                    "status": "fresh",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                    "source": "derived",
+                    "ttl_hours": 24,
+                    "cache_hit": True,
+                    "error_message": None,
+                },
+            },
         }
 
     def get_timeline(self, ticker: str, refresh: bool = False):
@@ -123,8 +204,14 @@ class FakeStockService:
         ]
 
     def get_research_context(self, ticker: str, refresh: bool = False):
-        overview = self.get_overview(ticker, refresh=refresh)
-        return {"ticker": "000001.SZ", **overview}
+        return {
+            "ticker": "000001.SZ",
+            "company": self.get_company(ticker, refresh=refresh),
+            "recent_events": self.list_events(ticker, refresh=refresh),
+            "latest_financial": self.list_financials(ticker, refresh=refresh)[0],
+            "latest_price": self.list_prices(ticker, refresh=refresh)[0],
+            "risk_flags": self.get_risk_flags(ticker, refresh=refresh),
+        }
 
 
 def test_company_overview_endpoint_returns_stock_snapshot(monkeypatch) -> None:
@@ -135,46 +222,66 @@ def test_company_overview_endpoint_returns_stock_snapshot(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["company"]["ticker"] == "000001.SZ"
-    assert payload["latest_financial"]["net_profit"] == -5.0
-    assert payload["risk_flags"][0]["code"] == "negative_net_profit"
-    assert payload["data_status"][0]["dataset"] == "company"
-    assert payload["data_status"][1]["dataset"] == "financials"
-    assert "raw" not in payload["company"]
-    assert "raw" not in payload["latest_financial"]
-    assert "raw" not in payload["latest_price"]
+    assert payload["ticker"] == "000001.SZ"
+    assert payload["company"]["data"]["ticker"] == "000001.SZ"
+    assert payload["latest_financial"]["data"]["net_profit"] == -5.0
+    assert payload["risk_flags"]["data"][0]["code"] == "negative_net_profit"
+    assert payload["company"]["data_status"]["status"] == "fresh"
+    assert payload["recent_events"]["data_status"]["source"] == "cninfo"
+    assert "raw" not in payload["company"]["data"]
+    assert "raw" not in payload["latest_financial"]["data"]
+    assert "raw" not in payload["latest_price"]["data"]
+    assert_matches_snapshot("company_overview_fresh.json", payload)
+
+
+def test_company_overview_contract_has_data_status_for_every_section() -> None:
+    example = CompanyOverview.model_config["json_schema_extra"]["example"]
+
+    assert example["ticker"] == "000001.SZ"
+    for section in ("company", "latest_financial", "latest_price", "recent_events", "risk_flags", "signals"):
+        assert "data" in example[section]
+        assert "data_status" in example[section]
 
 
 def test_company_overview_falls_back_when_company_profile_missing(monkeypatch) -> None:
     class PartialStockService(FakeStockService):
         def get_overview(self, ticker: str, refresh: bool = False):
             return {
+                "ticker": "002837.SZ",
                 "company": {
-                    "ticker": "002837.SZ",
-                    "name": None,
-                    "exchange": None,
-                    "market": None,
-                    "industry": None,
-                    "area": None,
-                    "list_date": None,
-                    "status": "unknown",
-                    "website": None,
-                    "chairman": None,
-                    "manager": None,
-                    "employees": None,
-                    "main_business": None,
-                    "business_scope": None,
-                    "source": "fallback",
-                    "updated_at": None,
-                    "raw": {},
+                    "data": {
+                        "ticker": "002837.SZ",
+                        "name": None,
+                        "exchange": None,
+                        "market": None,
+                        "industry": None,
+                        "area": None,
+                        "list_date": None,
+                        "status": "unknown",
+                        "website": None,
+                        "chairman": None,
+                        "manager": None,
+                        "employees": None,
+                        "main_business": None,
+                        "business_scope": None,
+                        "source": "fallback",
+                        "updated_at": None,
+                        "raw": {},
+                    },
+                    "data_status": {
+                        "status": "missing",
+                        "updated_at": None,
+                        "source": "tushare",
+                        "ttl_hours": 24,
+                        "cache_hit": False,
+                        "error_message": None,
+                    },
                 },
-                "latest_financial": self.list_financials(ticker, refresh=refresh)[0],
-                "latest_price": self.list_prices(ticker, refresh=refresh)[0],
-                "recent_events": self.list_events(ticker, refresh=refresh),
-                "risk_flags": self.get_risk_flags(ticker, refresh=refresh),
-                "data_status": [
-                    {"dataset": "company", "status": "partial", "source": "fallback", "count": 0, "as_of_date": None, "message": "Using fallback company profile."}
-                ],
+                "latest_financial": {"data": self.list_financials(ticker, refresh=refresh)[0], "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "tushare", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
+                "latest_price": {"data": self.list_prices(ticker, refresh=refresh)[0], "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "akshare", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
+                "recent_events": {"data": self.list_events(ticker, refresh=refresh), "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "cninfo", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
+                "risk_flags": {"data": self.get_risk_flags(ticker, refresh=refresh), "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "derived", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
+                "signals": {"data": [], "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "derived", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
             }
 
     monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: PartialStockService())
@@ -184,8 +291,10 @@ def test_company_overview_falls_back_when_company_profile_missing(monkeypatch) -
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["company"]["ticker"] == "002837.SZ"
-    assert payload["company"]["source"] == "fallback"
+    assert payload["company"]["data"]["ticker"] == "002837.SZ"
+    assert payload["company"]["data"]["source"] == "fallback"
+    assert payload["company"]["data_status"]["status"] == "missing"
+    assert_matches_snapshot("company_overview_missing_company.json", payload)
 
 
 def test_prices_fall_back_to_tushare_when_akshare_fails() -> None:
@@ -266,6 +375,7 @@ def test_financials_fall_back_to_cached_rows_when_refresh_returns_empty() -> Non
     repository._items = [
         FinancialSummary(
             record_id="002837.SZ:2025-09-30:1",
+            dedupe_key="002837.SZ:2025-09-30:1",
             ticker="002837.SZ",
             report_date="2025-09-30",
             announcement_date="2025-10-14",
@@ -389,10 +499,15 @@ def test_events_fall_back_to_exchange_search_when_cninfo_is_empty() -> None:
                 "items": [
                     {
                         "event_id": "https://www.szse.cn/disclosure/test",
+                        "dedupe_key": "002837.SZ:test",
                         "ticker": ticker,
                         "event_date": None,
                         "title": "英维克 关于年报的公告",
+                        "raw_title": "英维克 关于年报的公告",
+                        "event_type": "financial_report",
                         "category": "exchange_disclosure",
+                        "sentiment": "neutral",
+                        "source_type": "exchange_search",
                         "source": "exchange_search",
                         "url": "https://www.szse.cn/disclosure/test",
                         "summary": "Official exchange disclosure",
@@ -543,3 +658,222 @@ def test_events_debug_endpoint_returns_source_status(monkeypatch) -> None:
     assert payload["ticker"] == "002837.SZ"
     assert payload["debug"][0]["source"] == "cninfo"
     assert payload["debug"][1]["kept_count"] == 4
+
+
+def test_event_endpoint_supports_filtering_and_pagination(monkeypatch) -> None:
+    class FilterStockService(FakeStockService):
+        def list_events(self, ticker: str, limit: int = 20, refresh: bool = False):
+            return super().list_events(ticker, limit, refresh) + [
+                {
+                    "event_id": "evt-2",
+                    "ticker": "000001.SZ",
+                    "event_date": "2026-03-15",
+                    "title": "Share buyback plan",
+                    "raw_title": "Share buyback plan",
+                    "event_type": "capital_operation",
+                    "category": "buyback",
+                    "sentiment": "positive",
+                    "source_type": "filing",
+                    "source": "cninfo",
+                    "url": None,
+                    "summary": "Buyback plan",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                    "importance": "medium",
+                }
+            ]
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: FilterStockService())
+    client = TestClient(app)
+
+    response = client.get("/company/000001/events?importance=medium&page=1&page_size=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["event_id"] == "evt-2"
+
+
+def test_financials_endpoint_supports_filtering_sorting_and_pagination(monkeypatch) -> None:
+    class FinancialStockService(FakeStockService):
+        def list_financials(self, ticker: str, limit: int = 8, refresh: bool = False):
+            return [
+                {
+                    "record_id": "000001.SZ:2025-12-31:annual",
+                    "ticker": "000001.SZ",
+                    "report_date": "2025-12-31",
+                    "announcement_date": "2026-03-16",
+                    "report_type": "annual",
+                    "revenue": 100.0,
+                    "revenue_yoy": 1.0,
+                    "net_profit": 10.0,
+                    "net_profit_yoy": 2.0,
+                    "eps": 0.2,
+                    "roe": 1.0,
+                    "gross_margin": 30.0,
+                    "source": "tushare",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                },
+                {
+                    "record_id": "000001.SZ:2025-09-30:quarterly",
+                    "ticker": "000001.SZ",
+                    "report_date": "2025-09-30",
+                    "announcement_date": "2025-10-20",
+                    "report_type": "quarterly",
+                    "revenue": 80.0,
+                    "revenue_yoy": 3.0,
+                    "net_profit": 8.0,
+                    "net_profit_yoy": 4.0,
+                    "eps": 0.1,
+                    "roe": 0.9,
+                    "gross_margin": 28.0,
+                    "source": "tushare",
+                    "updated_at": "2025-10-21T00:00:00Z",
+                },
+                {
+                    "record_id": "000001.SZ:2025-06-30:quarterly",
+                    "ticker": "000001.SZ",
+                    "report_date": "2025-06-30",
+                    "announcement_date": "2025-07-20",
+                    "report_type": "quarterly",
+                    "revenue": 70.0,
+                    "revenue_yoy": 5.0,
+                    "net_profit": 7.0,
+                    "net_profit_yoy": 6.0,
+                    "eps": 0.09,
+                    "roe": 0.8,
+                    "gross_margin": 27.0,
+                    "source": "tushare",
+                    "updated_at": "2025-07-21T00:00:00Z",
+                },
+            ]
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: FinancialStockService())
+    client = TestClient(app)
+
+    response = client.get("/company/000001/financials?report_type=quarterly&sort_order=asc&page=1&page_size=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["report_type"] == "quarterly"
+    assert payload[0]["report_date"] == "2025-06-30"
+
+
+def test_prices_endpoint_supports_filtering_sorting_and_pagination(monkeypatch) -> None:
+    class PriceStockService(FakeStockService):
+        def list_prices(
+            self,
+            ticker: str,
+            limit: int = 60,
+            start_date: str | None = None,
+            end_date: str | None = None,
+            refresh: bool = False,
+        ):
+            return [
+                {
+                    "ticker": "000001.SZ",
+                    "trade_date": "2026-03-13",
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.9,
+                    "close": 10.8,
+                    "volume": 1000.0,
+                    "amount": 5000.0,
+                    "change_pct": 9.5,
+                    "turnover_rate": 2.0,
+                    "source": "akshare",
+                    "updated_at": "2026-03-17T00:00:00Z",
+                },
+                {
+                    "ticker": "000001.SZ",
+                    "trade_date": "2026-03-12",
+                    "open": 10.0,
+                    "high": 10.5,
+                    "low": 9.8,
+                    "close": 10.1,
+                    "volume": 900.0,
+                    "amount": 4000.0,
+                    "change_pct": 1.5,
+                    "turnover_rate": 1.5,
+                    "source": "akshare",
+                    "updated_at": "2026-03-16T00:00:00Z",
+                },
+                {
+                    "ticker": "000001.SZ",
+                    "trade_date": "2026-03-11",
+                    "open": 9.8,
+                    "high": 10.1,
+                    "low": 9.5,
+                    "close": 9.6,
+                    "volume": 800.0,
+                    "amount": 3500.0,
+                    "change_pct": -2.0,
+                    "turnover_rate": 1.2,
+                    "source": "akshare",
+                    "updated_at": "2026-03-15T00:00:00Z",
+                },
+            ]
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: PriceStockService())
+    client = TestClient(app)
+
+    response = client.get("/company/000001/prices?min_change_pct=1&sort_order=desc&page=1&page_size=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    assert payload[0]["trade_date"] == "2026-03-13"
+    assert payload[1]["trade_date"] == "2026-03-12"
+
+
+def test_health_db_returns_repository_backend_status(monkeypatch) -> None:
+    class FakeRepository:
+        def ping(self):
+            return True
+
+    class HealthDbStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthDbStockService())
+    client = TestClient(app)
+
+    response = client.get("/health/db")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["backend"] == "sqlite"
+
+
+def test_health_sources_reports_source_configuration(monkeypatch) -> None:
+    client = TestClient(app)
+
+    response = client.get("/health/sources")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert "tushare" in payload["sources"]
+    assert "cninfo" in payload["sources"]
+    assert payload["sources"]["akshare"]["configured"] is True
+
+
+def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
+    class FakeRepository:
+        def list_sync_state(self, ticker: str | None = None):
+            return [{"dataset": "company_profile", "ticker": ticker or "000001.SZ", "synced_at": "2026-03-17T00:00:00Z"}]
+
+        def ping(self):
+            return True
+
+    class HealthStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthStockService())
+    client = TestClient(app)
+
+    response = client.get("/health/sync?ticker=000001.SZ")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["dataset"] == "company_profile"

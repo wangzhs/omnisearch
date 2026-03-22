@@ -48,17 +48,25 @@ class SQLiteRepository:
                     main_business TEXT,
                     business_scope TEXT,
                     source TEXT NOT NULL,
+                    dedupe_key TEXT,
+                    source_priority INTEGER NOT NULL DEFAULT 0,
                     raw_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS event (
                     event_id TEXT PRIMARY KEY,
+                    dedupe_key TEXT,
                     ticker TEXT NOT NULL,
                     event_date TEXT,
                     title TEXT NOT NULL,
+                    raw_title TEXT,
+                    event_type TEXT,
                     category TEXT,
+                    sentiment TEXT,
+                    source_type TEXT,
                     source TEXT NOT NULL,
+                    source_priority INTEGER NOT NULL DEFAULT 0,
                     url TEXT,
                     summary TEXT,
                     importance TEXT,
@@ -69,6 +77,7 @@ class SQLiteRepository:
 
                 CREATE TABLE IF NOT EXISTS financial_summary (
                     record_id TEXT PRIMARY KEY,
+                    dedupe_key TEXT,
                     ticker TEXT NOT NULL,
                     report_date TEXT NOT NULL,
                     announcement_date TEXT,
@@ -81,6 +90,7 @@ class SQLiteRepository:
                     roe REAL,
                     gross_margin REAL,
                     source TEXT NOT NULL,
+                    source_priority INTEGER NOT NULL DEFAULT 0,
                     raw_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -89,6 +99,7 @@ class SQLiteRepository:
                 CREATE TABLE IF NOT EXISTS price_daily (
                     ticker TEXT NOT NULL,
                     trade_date TEXT NOT NULL,
+                    dedupe_key TEXT,
                     open REAL,
                     high REAL,
                     low REAL,
@@ -98,6 +109,7 @@ class SQLiteRepository:
                     change_pct REAL,
                     turnover_rate REAL,
                     source TEXT NOT NULL,
+                    source_priority INTEGER NOT NULL DEFAULT 0,
                     raw_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (ticker, trade_date)
@@ -117,6 +129,30 @@ class SQLiteRepository:
                 connection.execute("ALTER TABLE event ADD COLUMN importance TEXT")
             except sqlite3.OperationalError:
                 pass
+            for statement in (
+                "ALTER TABLE company_profile ADD COLUMN dedupe_key TEXT",
+                "ALTER TABLE company_profile ADD COLUMN source_priority INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE event ADD COLUMN dedupe_key TEXT",
+                "ALTER TABLE event ADD COLUMN raw_title TEXT",
+                "ALTER TABLE event ADD COLUMN event_type TEXT",
+                "ALTER TABLE event ADD COLUMN sentiment TEXT",
+                "ALTER TABLE event ADD COLUMN source_type TEXT",
+                "ALTER TABLE event ADD COLUMN source_priority INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE financial_summary ADD COLUMN dedupe_key TEXT",
+                "ALTER TABLE financial_summary ADD COLUMN source_priority INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE price_daily ADD COLUMN dedupe_key TEXT",
+                "ALTER TABLE price_daily ADD COLUMN source_priority INTEGER NOT NULL DEFAULT 0",
+                "CREATE INDEX IF NOT EXISTS idx_event_dedupe_key ON event (ticker, dedupe_key)",
+            ):
+                try:
+                    connection.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
+
+    def ping(self) -> bool:
+        with self.connect() as connection:
+            connection.execute("SELECT 1").fetchone()
+        return True
 
     def upsert_company_profile(self, profile: CompanyProfile) -> CompanyProfile:
         payload = profile.model_dump()
@@ -127,8 +163,8 @@ class SQLiteRepository:
                 INSERT INTO company_profile (
                     ticker, name, exchange, market, industry, area, list_date, status,
                     website, chairman, manager, employees, main_business, business_scope,
-                    source, raw_json, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source, dedupe_key, source_priority, raw_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ticker) DO UPDATE SET
                     name=excluded.name,
                     exchange=excluded.exchange,
@@ -144,6 +180,8 @@ class SQLiteRepository:
                     main_business=excluded.main_business,
                     business_scope=excluded.business_scope,
                     source=excluded.source,
+                    dedupe_key=excluded.dedupe_key,
+                    source_priority=excluded.source_priority,
                     raw_json=excluded.raw_json,
                     updated_at=excluded.updated_at
                 """,
@@ -163,6 +201,8 @@ class SQLiteRepository:
                     payload["main_business"],
                     payload["business_scope"],
                     payload["source"],
+                    payload.get("dedupe_key"),
+                    payload.get("source_priority", 0),
                     json.dumps(payload["raw"], ensure_ascii=False),
                     payload["updated_at"],
                 ),
@@ -184,14 +224,22 @@ class SQLiteRepository:
                 connection.execute(
                     """
                     INSERT INTO event (
-                        event_id, ticker, event_date, title, category, source, url, summary, importance, raw_json, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        event_id, dedupe_key, ticker, event_date, title, raw_title, event_type,
+                        category, sentiment, source_type, source, source_priority, url, summary,
+                        importance, raw_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(event_id) DO UPDATE SET
+                        dedupe_key=excluded.dedupe_key,
                         ticker=excluded.ticker,
                         event_date=excluded.event_date,
                         title=excluded.title,
+                        raw_title=excluded.raw_title,
+                        event_type=excluded.event_type,
                         category=excluded.category,
+                        sentiment=excluded.sentiment,
+                        source_type=excluded.source_type,
                         source=excluded.source,
+                        source_priority=excluded.source_priority,
                         url=excluded.url,
                         summary=excluded.summary,
                         importance=excluded.importance,
@@ -200,11 +248,17 @@ class SQLiteRepository:
                     """,
                     (
                         payload["event_id"],
+                        payload.get("dedupe_key"),
                         payload["ticker"],
                         payload["event_date"],
                         payload["title"],
+                        payload.get("raw_title"),
+                        payload.get("event_type"),
                         payload["category"],
+                        payload.get("sentiment"),
+                        payload.get("source_type"),
                         payload["source"],
+                        payload.get("source_priority", 0),
                         payload["url"],
                         payload["summary"],
                         payload.get("importance"),
@@ -225,16 +279,24 @@ class SQLiteRepository:
                 connection.execute(
                     """
                     INSERT INTO event (
-                        event_id, ticker, event_date, title, category, source, url, summary, importance, raw_json, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        event_id, dedupe_key, ticker, event_date, title, raw_title, event_type,
+                        category, sentiment, source_type, source, source_priority, url, summary,
+                        importance, raw_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         payload["event_id"],
+                        payload.get("dedupe_key"),
                         payload["ticker"],
                         payload["event_date"],
                         payload["title"],
+                        payload.get("raw_title"),
+                        payload.get("event_type"),
                         payload["category"],
+                        payload.get("sentiment"),
+                        payload.get("source_type"),
                         payload["source"],
+                        payload.get("source_priority", 0),
                         payload["url"],
                         payload["summary"],
                         payload.get("importance"),
@@ -267,11 +329,12 @@ class SQLiteRepository:
                 connection.execute(
                     """
                     INSERT INTO financial_summary (
-                        record_id, ticker, report_date, announcement_date, report_type,
+                        record_id, dedupe_key, ticker, report_date, announcement_date, report_type,
                         revenue, revenue_yoy, net_profit, net_profit_yoy, eps, roe,
-                        gross_margin, source, raw_json, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        gross_margin, source, source_priority, raw_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(record_id) DO UPDATE SET
+                        dedupe_key=excluded.dedupe_key,
                         ticker=excluded.ticker,
                         report_date=excluded.report_date,
                         announcement_date=excluded.announcement_date,
@@ -284,11 +347,13 @@ class SQLiteRepository:
                         roe=excluded.roe,
                         gross_margin=excluded.gross_margin,
                         source=excluded.source,
+                        source_priority=excluded.source_priority,
                         raw_json=excluded.raw_json,
                         updated_at=excluded.updated_at
                     """,
                     (
                         payload["record_id"],
+                        payload.get("dedupe_key"),
                         payload["ticker"],
                         payload["report_date"],
                         payload["announcement_date"],
@@ -301,6 +366,7 @@ class SQLiteRepository:
                         payload["roe"],
                         payload["gross_margin"],
                         payload["source"],
+                        payload.get("source_priority", 0),
                         json.dumps(payload["raw"], ensure_ascii=False),
                         payload["updated_at"],
                     ),
@@ -330,10 +396,11 @@ class SQLiteRepository:
                 connection.execute(
                     """
                     INSERT INTO price_daily (
-                        ticker, trade_date, open, high, low, close, volume, amount,
-                        change_pct, turnover_rate, source, raw_json, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ticker, trade_date, dedupe_key, open, high, low, close, volume, amount,
+                        change_pct, turnover_rate, source, source_priority, raw_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(ticker, trade_date) DO UPDATE SET
+                        dedupe_key=excluded.dedupe_key,
                         open=excluded.open,
                         high=excluded.high,
                         low=excluded.low,
@@ -343,12 +410,14 @@ class SQLiteRepository:
                         change_pct=excluded.change_pct,
                         turnover_rate=excluded.turnover_rate,
                         source=excluded.source,
+                        source_priority=excluded.source_priority,
                         raw_json=excluded.raw_json,
                         updated_at=excluded.updated_at
                     """,
                     (
                         payload["ticker"],
                         payload["trade_date"],
+                        payload.get("dedupe_key"),
                         payload["open"],
                         payload["high"],
                         payload["low"],
@@ -358,6 +427,7 @@ class SQLiteRepository:
                         payload["change_pct"],
                         payload["turnover_rate"],
                         payload["source"],
+                        payload.get("source_priority", 0),
                         json.dumps(payload["raw"], ensure_ascii=False),
                         payload["updated_at"],
                     ),
@@ -411,6 +481,17 @@ class SQLiteRepository:
             ).fetchone()
         return row["synced_at"] if row else None
 
+    def list_sync_state(self, ticker: str | None = None) -> list[dict[str, str]]:
+        query = "SELECT dataset, ticker, synced_at FROM sync_state"
+        params: tuple[object, ...] = ()
+        if ticker:
+            query += " WHERE ticker = ?"
+            params = (ticker,)
+        query += " ORDER BY ticker ASC, dataset ASC"
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [{"dataset": row["dataset"], "ticker": row["ticker"], "synced_at": row["synced_at"]} for row in rows]
+
     def _company_from_row(self, row: sqlite3.Row) -> CompanyProfile:
         return CompanyProfile(
             ticker=row["ticker"],
@@ -428,6 +509,8 @@ class SQLiteRepository:
             main_business=row["main_business"],
             business_scope=row["business_scope"],
             source=row["source"],
+            dedupe_key=row["dedupe_key"] or row["ticker"],
+            source_priority=row["source_priority"],
             updated_at=row["updated_at"],
             raw=json.loads(row["raw_json"]),
         )
@@ -435,11 +518,17 @@ class SQLiteRepository:
     def _event_from_row(self, row: sqlite3.Row) -> Event:
         return Event(
             event_id=row["event_id"],
+            dedupe_key=row["dedupe_key"] or row["event_id"],
             ticker=row["ticker"],
             event_date=row["event_date"],
             title=row["title"],
+            raw_title=row["raw_title"] or row["title"],
+            event_type=row["event_type"],
             category=row["category"],
+            sentiment=row["sentiment"],
+            source_type=row["source_type"],
             source=row["source"],
+            source_priority=row["source_priority"],
             url=row["url"],
             summary=row["summary"],
             importance=row["importance"],
@@ -450,6 +539,7 @@ class SQLiteRepository:
     def _financial_from_row(self, row: sqlite3.Row) -> FinancialSummary:
         return FinancialSummary(
             record_id=row["record_id"],
+            dedupe_key=row["dedupe_key"] or row["record_id"],
             ticker=row["ticker"],
             report_date=row["report_date"],
             announcement_date=row["announcement_date"],
@@ -462,6 +552,7 @@ class SQLiteRepository:
             roe=row["roe"],
             gross_margin=row["gross_margin"],
             source=row["source"],
+            source_priority=row["source_priority"],
             updated_at=row["updated_at"],
             raw=json.loads(row["raw_json"]),
         )
@@ -470,6 +561,7 @@ class SQLiteRepository:
         return PriceDaily(
             ticker=row["ticker"],
             trade_date=row["trade_date"],
+            dedupe_key=row["dedupe_key"] or f"{row['ticker']}:{row['trade_date']}",
             open=row["open"],
             high=row["high"],
             low=row["low"],
@@ -479,6 +571,7 @@ class SQLiteRepository:
             change_pct=row["change_pct"],
             turnover_rate=row["turnover_rate"],
             source=row["source"],
+            source_priority=row["source_priority"],
             updated_at=row["updated_at"],
             raw=json.loads(row["raw_json"]),
         )

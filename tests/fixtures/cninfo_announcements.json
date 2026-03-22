@@ -1,0 +1,18 @@
+{
+  "announcements": [
+    {
+      "announcementId": "123",
+      "announcementTitle": "关于股东减持计划的公告",
+      "announcementTime": "2026-03-16",
+      "announcementType": "公告",
+      "adjunctUrl": "finalpage/2026-03-16/test-1.pdf"
+    },
+    {
+      "announcementId": "124",
+      "announcementTitle": "2025年年度报告",
+      "announcementTime": "2026-03-15",
+      "announcementType": "定期报告",
+      "adjunctUrl": "finalpage/2026-03-15/test-2.pdf"
+    }
+  ]
+}

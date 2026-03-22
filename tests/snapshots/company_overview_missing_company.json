@@ -1,0 +1,139 @@
+{
+  "ticker": "002837.SZ",
+  "company": {
+    "data": {
+      "ticker": "002837.SZ",
+      "name": null,
+      "exchange": null,
+      "market": null,
+      "industry": null,
+      "area": null,
+      "list_date": null,
+      "status": "unknown",
+      "website": null,
+      "chairman": null,
+      "manager": null,
+      "employees": null,
+      "main_business": null,
+      "business_scope": null,
+      "source": "fallback",
+      "updated_at": null
+    },
+    "data_status": {
+      "status": "missing",
+      "updated_at": null,
+      "source": "tushare",
+      "ttl_hours": 24,
+      "cache_hit": false,
+      "error_message": null
+    }
+  },
+  "latest_financial": {
+    "data": {
+      "record_id": "000001.SZ:2025-12-31:annual",
+      "ticker": "000001.SZ",
+      "report_date": "2025-12-31",
+      "announcement_date": "2026-03-16",
+      "report_type": "annual",
+      "revenue": 100.0,
+      "revenue_yoy": -2.0,
+      "net_profit": -5.0,
+      "net_profit_yoy": -10.0,
+      "eps": 0.2,
+      "roe": 1.0,
+      "gross_margin": 30.0,
+      "source": "tushare",
+      "updated_at": "2026-03-17T00:00:00Z"
+    },
+    "data_status": {
+      "status": "fresh",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
+      "ttl_hours": 24,
+      "cache_hit": true,
+      "error_message": null
+    }
+  },
+  "latest_price": {
+    "data": {
+      "ticker": "000001.SZ",
+      "trade_date": "2026-03-13",
+      "open": 10.0,
+      "high": 11.0,
+      "low": 9.9,
+      "close": 10.8,
+      "volume": 1000.0,
+      "amount": 5000.0,
+      "change_pct": 9.5,
+      "turnover_rate": 2.0,
+      "source": "akshare",
+      "updated_at": "2026-03-17T00:00:00Z"
+    },
+    "data_status": {
+      "status": "fresh",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "source": "akshare",
+      "ttl_hours": 24,
+      "cache_hit": true,
+      "error_message": null
+    }
+  },
+  "recent_events": {
+    "data": [
+      {
+        "event_id": "evt-1",
+        "ticker": "000001.SZ",
+        "event_date": "2026-03-16",
+        "title": "Annual report disclosed",
+        "raw_title": "Annual report disclosed",
+        "event_type": "financial_report",
+        "category": "report",
+        "sentiment": "neutral",
+        "source_type": "filing",
+        "source": "cninfo",
+        "url": "https://example.com/report.pdf",
+        "summary": "Annual report filing",
+        "updated_at": "2026-03-17T00:00:00Z",
+        "importance": "high"
+      }
+    ],
+    "data_status": {
+      "status": "fresh",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "source": "cninfo",
+      "ttl_hours": 24,
+      "cache_hit": true,
+      "error_message": null
+    }
+  },
+  "risk_flags": {
+    "data": [
+      {
+        "level": "high",
+        "code": "negative_net_profit",
+        "message": "Latest reported net profit is negative.",
+        "dimension": null,
+        "as_of_date": null
+      }
+    ],
+    "data_status": {
+      "status": "fresh",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
+      "ttl_hours": 24,
+      "cache_hit": true,
+      "error_message": null
+    }
+  },
+  "signals": {
+    "data": [],
+    "data_status": {
+      "status": "fresh",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
+      "ttl_hours": 24,
+      "cache_hit": true,
+      "error_message": null
+    }
+  }
+}
