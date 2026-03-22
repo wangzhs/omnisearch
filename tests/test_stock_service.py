@@ -246,3 +246,88 @@ def test_risk_flags_capture_drawdown_and_volatility() -> None:
 
     assert "price_volatility" in codes
     assert "recent_drawdown" in codes
+
+
+def test_runtime_sync_recording_covers_all_primary_datasets() -> None:
+    recorded = []
+
+    class FakeRepository:
+        def __init__(self):
+            self.prices = []
+            self.events = []
+            self.financials = []
+
+        def get_company_profile(self, ticker: str):
+            return None
+
+        def upsert_company_profile(self, profile):
+            return profile
+
+        def list_financial_summaries(self, ticker: str, limit: int = 8):
+            return self.financials
+
+        def upsert_financial_summaries(self, ticker: str, items):
+            self.financials = items
+            return items
+
+        def list_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return self.prices
+
+        def upsert_prices(self, ticker: str, prices):
+            self.prices = prices
+            return prices
+
+        def list_events(self, ticker: str, limit: int = 20):
+            return self.events
+
+        def upsert_events(self, ticker: str, events):
+            self.events = events
+            return events
+
+        def replace_events(self, ticker: str, events):
+            self.events = events
+            return events
+
+        def get_last_synced_at(self, dataset: str, ticker: str):
+            return None
+
+        def get_sync_state(self, dataset: str, ticker: str):
+            return None
+
+        def record_sync_result(self, dataset: str, ticker: str, synced_at: str, **kwargs):
+            recorded.append({"dataset": dataset, "ticker": ticker, "synced_at": synced_at, **kwargs})
+
+    class FakeTushareCollector:
+        def fetch_company_profile(self, ticker: str):
+            return {"basic": {"name": "平安银行", "market": "主板", "industry": "银行", "list_status": "L"}, "company": {}}
+
+        def fetch_financial_summaries(self, ticker: str, limit: int = 8):
+            return [{"end_date": "20251231", "report_type": "annual", "n_income": 1.0}]
+
+        def fetch_daily_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return [{"trade_date": "20260317", "close": 10.5, "source": "tushare"}]
+
+    class FakeCNInfoCollector:
+        def fetch_events(self, ticker: str, limit: int = 20):
+            return [{"announcementTitle": "关于年报的公告", "announcementTime": "2026-03-16", "adjunctUrl": "finalpage/test.pdf"}]
+
+    class FakeAKShareCollector:
+        def fetch_daily_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return [{"trade_date": "20260317", "close": 10.5, "source": "akshare"}]
+
+    service = StockDataService(
+        repository=FakeRepository(),
+        tushare_collector=FakeTushareCollector(),
+        cninfo_collector=FakeCNInfoCollector(),
+        akshare_collector=FakeAKShareCollector(),
+    )
+
+    service._load_company("000001.SZ")
+    service._load_financials("000001.SZ")
+    service._load_prices("000001.SZ")
+    service._load_events("000001.SZ")
+
+    datasets = {item["dataset"] for item in recorded}
+    assert datasets == {"company_profile", "financial_summary", "price_daily", "event"}
+    assert all(item["success"] is True for item in recorded)
+    assert all(item["records_written"] >= 1 for item in recorded)

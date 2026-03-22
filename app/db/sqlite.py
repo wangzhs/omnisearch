@@ -653,7 +653,14 @@ class SQLiteRepository:
         last_synced_at = row["last_synced_at"] or row["synced_at"]
         last_success_at = row["last_success_at"] or row["synced_at"]
         last_error_at = row["last_error_at"]
-        status = "failed" if last_error_at and (not last_success_at or last_error_at >= last_success_at) else "ok"
+        if last_error_at and not last_success_at:
+            status = "failed"
+        elif last_error_at and last_success_at and last_error_at >= last_success_at:
+            status = "failed"
+        elif last_error_at and last_success_at:
+            status = "partial"
+        else:
+            status = "ok"
         return {
             "dataset": row["dataset"],
             "ticker": row["ticker"],

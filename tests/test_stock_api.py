@@ -18,20 +18,29 @@ def assert_matches_snapshot(name: str, payload: dict) -> None:
 
 class FakeStockService:
     @staticmethod
-    def _data_status(source: str | None, *, status: str = "fresh", fallback_used: bool = False, attempted_sources: list[str] | None = None):
+    def _data_status(
+        source: str | None,
+        *,
+        status: str = "fresh",
+        fallback_used: bool = False,
+        attempted_sources: list[str] | None = None,
+        last_error_message: str | None = None,
+        last_error_at: str | None = None,
+    ):
         return {
             "status": status,
             "updated_at": "2026-03-17T00:00:00Z" if status != "missing" else None,
             "source": source,
             "ttl_hours": 24,
             "cache_hit": True if status != "missing" else False,
-            "error_message": None,
+            "error_message": last_error_message,
             "last_synced_at": "2026-03-17T00:00:00Z" if status != "missing" else None,
             "last_success_at": "2026-03-17T00:00:00Z" if status != "missing" else None,
-            "last_error_at": None,
+            "last_error_at": last_error_at,
+            "last_error_message": last_error_message,
             "source_metadata": {
                 "selected_source": source,
-                "selected_source_priority": None if source is None else {"tushare": 100, "cninfo": 100, "akshare": 90, "derived": 0}.get(source, 0),
+                "selected_source_priority": None if source is None else {"tushare": 100, "cninfo": 100, "akshare": 90, "exchange_search": 60, "fallback": 10, "derived": 0}.get(source, 0),
                 "fallback_used": fallback_used,
                 "attempted_sources": attempted_sources or ([source] if source else []),
             },
@@ -54,6 +63,7 @@ class FakeStockService:
             "main_business": None,
             "business_scope": None,
             "source": "tushare",
+            "source_priority": 100,
             "updated_at": "2026-03-17T00:00:00Z",
             "raw": {},
         }
@@ -63,6 +73,7 @@ class FakeStockService:
             {
                 "event_id": "evt-1",
                 "ticker": "000001.SZ",
+                "dedupe_key": "evt-1",
                 "event_date": "2026-03-16",
                 "title": "Annual report disclosed",
                 "raw_title": "Annual report disclosed",
@@ -71,6 +82,7 @@ class FakeStockService:
                 "sentiment": "neutral",
                 "source_type": "filing",
                 "source": "cninfo",
+                "source_priority": 100,
                 "url": "https://example.com/report.pdf",
                 "source_url": "https://example.com/report.pdf",
                 "summary": "Annual report filing",
@@ -96,6 +108,7 @@ class FakeStockService:
                 "roe": 1.0,
                 "gross_margin": 30.0,
                 "source": "tushare",
+                "source_priority": 100,
                 "updated_at": "2026-03-17T00:00:00Z",
                 "raw": {},
             }
@@ -122,6 +135,7 @@ class FakeStockService:
                 "change_pct": 9.5,
                 "turnover_rate": 2.0,
                 "source": "akshare",
+                "source_priority": 90,
                 "updated_at": "2026-03-17T00:00:00Z",
                 "raw": {},
             }
@@ -207,7 +221,9 @@ def test_company_overview_endpoint_returns_stock_snapshot(monkeypatch) -> None:
     assert payload["risk_flags"]["data"][0]["code"] == "negative_net_profit"
     assert payload["company"]["data_status"]["status"] == "fresh"
     assert payload["recent_events"]["data_status"]["source"] == "cninfo"
+    assert payload["recent_events"]["data"][0]["source_priority"] == 100
     assert payload["latest_price"]["data_status"]["source_metadata"]["attempted_sources"] == ["akshare", "tushare"]
+    assert payload["latest_price"]["data"]["source_priority"] == 90
     assert "raw" not in payload["company"]["data"]
     assert "raw" not in payload["latest_financial"]["data"]
     assert "raw" not in payload["latest_price"]["data"]
@@ -271,6 +287,116 @@ def test_company_overview_falls_back_when_company_profile_missing(monkeypatch) -
     assert payload["company"]["data"]["source"] == "fallback"
     assert payload["company"]["data_status"]["status"] == "missing"
     assert_matches_snapshot("company_overview_missing_company.json", payload)
+
+
+def test_company_overview_exposes_stale_failed_snapshot(monkeypatch) -> None:
+    class StaleStockService(FakeStockService):
+        def get_overview(self, ticker: str, refresh: bool = False):
+            return {
+                "ticker": "600036.SH",
+                "company": {
+                    "data": {
+                        "ticker": "600036.SH",
+                        "name": "China Merchants Bank",
+                        "source": "tushare",
+                        "source_priority": 100,
+                        "updated_at": "2026-03-10T00:00:00Z",
+                    },
+                    "data_status": self._data_status(
+                        "tushare",
+                        status="stale",
+                        attempted_sources=["tushare"],
+                        last_error_message="Upstream request timed out.",
+                        last_error_at="2026-03-17T00:00:00Z",
+                    ),
+                },
+                "latest_financial": {"data": None, "data_status": self._data_status("tushare", status="stale", attempted_sources=["tushare"])},
+                "latest_price": {
+                    "data": None,
+                    "data_status": self._data_status(
+                        "akshare",
+                        status="failed",
+                        attempted_sources=["akshare", "tushare"],
+                        last_error_message="eastmoney unavailable",
+                        last_error_at="2026-03-17T00:00:00Z",
+                    ),
+                },
+                "recent_events": {"data": [], "data_status": self._data_status(None, status="missing", attempted_sources=["cninfo", "exchange_search"])},
+                "risk_flags": {
+                    "data": [],
+                    "data_status": self._data_status(
+                        "derived",
+                        status="failed",
+                        attempted_sources=["derived"],
+                        last_error_message="Dependent sections are incomplete.",
+                        last_error_at="2026-03-17T00:00:00Z",
+                    ),
+                },
+                "signals": {
+                    "data": [],
+                    "data_status": self._data_status(
+                        "derived",
+                        status="failed",
+                        attempted_sources=["derived"],
+                        last_error_message="Dependent sections are incomplete.",
+                        last_error_at="2026-03-17T00:00:00Z",
+                    ),
+                },
+            }
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: StaleStockService())
+
+    client = TestClient(app)
+    response = client.get("/company/600036/overview")
+
+    assert response.status_code == 200
+    assert_matches_snapshot("company_overview_stale_failed.json", response.json())
+
+
+def test_company_overview_exposes_partial_source_priority_snapshot(monkeypatch) -> None:
+    class PartialOverviewService(FakeStockService):
+        def get_overview(self, ticker: str, refresh: bool = False):
+            return {
+                "ticker": "002837.SZ",
+                "company": {"data": self.get_company(ticker, refresh=refresh), "data_status": self._data_status("tushare", attempted_sources=["tushare"])},
+                "latest_financial": {"data": self.list_financials(ticker, refresh=refresh)[0], "data_status": self._data_status("tushare", attempted_sources=["tushare"])},
+                "latest_price": {
+                    "data": {**self.list_prices(ticker, refresh=refresh)[0], "source": "tushare", "source_priority": 100},
+                    "data_status": self._data_status("tushare", fallback_used=True, attempted_sources=["akshare", "tushare"]),
+                },
+                "recent_events": {
+                    "data": [{
+                        "event_id": "evt-fallback",
+                        "ticker": "002837.SZ",
+                        "dedupe_key": "evt-fallback",
+                        "event_date": "2026-03-16",
+                        "title": "英维克 年报公告",
+                        "raw_title": "英维克 年报公告",
+                        "event_type": "financial_report",
+                        "category": "exchange_disclosure",
+                        "sentiment": "neutral",
+                        "source_type": "exchange_search",
+                        "source": "exchange_search",
+                        "source_priority": 60,
+                        "url": "https://www.szse.cn/disclosure/test",
+                        "source_url": "https://www.szse.cn/disclosure/test",
+                        "summary": "Fallback event source",
+                        "updated_at": "2026-03-17T00:00:00Z",
+                        "importance": "high",
+                    }],
+                    "data_status": self._data_status("exchange_search", fallback_used=True, attempted_sources=["cninfo", "exchange_search"]),
+                },
+                "risk_flags": {"data": self.get_risk_flags(ticker, refresh=refresh), "data_status": self._data_status("derived", attempted_sources=["derived"])},
+                "signals": {"data": [], "data_status": self._data_status("derived", attempted_sources=["derived"])},
+            }
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: PartialOverviewService())
+
+    client = TestClient(app)
+    response = client.get("/company/002837/overview")
+
+    assert response.status_code == 200
+    assert_matches_snapshot("company_overview_partial.json", response.json())
 
 
 def test_prices_fall_back_to_tushare_when_akshare_fails() -> None:
@@ -844,12 +970,12 @@ def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
             return [{
                 "dataset": "company_profile",
                 "ticker": ticker or "000001.SZ",
-                "status": "ok",
+                "status": "partial",
                 "synced_at": "2026-03-17T00:00:00Z",
                 "last_synced_at": "2026-03-17T00:00:00Z",
                 "last_success_at": "2026-03-17T00:00:00Z",
-                "last_error_at": None,
-                "last_error_message": None,
+                "last_error_at": "2026-03-16T23:59:00Z",
+                "last_error_message": "upstream timeout",
                 "records_written": 1,
                 "duration_ms": 120,
             }]
@@ -868,5 +994,7 @@ def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["items"][0]["dataset"] == "company_profile"
+    assert payload["items"][0]["status"] == "partial"
+    assert payload["items"][0]["last_error_message"] == "upstream timeout"
     assert payload["items"][0]["records_written"] == 1
     assert payload["items"][0]["duration_ms"] == 120

@@ -17,6 +17,7 @@
       "main_business": null,
       "business_scope": null,
       "source": "tushare",
+      "source_priority": 100,
       "updated_at": "2026-03-17T00:00:00Z"
     },
     "data_status": {
@@ -29,6 +30,7 @@
       "last_synced_at": "2026-03-17T00:00:00Z",
       "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
+      "last_error_message": null,
       "source_metadata": {
         "selected_source": "tushare",
         "selected_source_priority": 100,
@@ -54,6 +56,7 @@
       "roe": 1.0,
       "gross_margin": 30.0,
       "source": "tushare",
+      "source_priority": 100,
       "updated_at": "2026-03-17T00:00:00Z"
     },
     "data_status": {
@@ -66,6 +69,7 @@
       "last_synced_at": "2026-03-17T00:00:00Z",
       "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
+      "last_error_message": null,
       "source_metadata": {
         "selected_source": "tushare",
         "selected_source_priority": 100,
@@ -89,6 +93,7 @@
       "change_pct": 9.5,
       "turnover_rate": 2.0,
       "source": "akshare",
+      "source_priority": 90,
       "updated_at": "2026-03-17T00:00:00Z"
     },
     "data_status": {
@@ -101,6 +106,7 @@
       "last_synced_at": "2026-03-17T00:00:00Z",
       "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
+      "last_error_message": null,
       "source_metadata": {
         "selected_source": "akshare",
         "selected_source_priority": 90,
@@ -117,6 +123,7 @@
       {
         "event_id": "evt-1",
         "ticker": "000001.SZ",
+        "dedupe_key": "evt-1",
         "event_date": "2026-03-16",
         "title": "Annual report disclosed",
         "raw_title": "Annual report disclosed",
@@ -125,6 +132,7 @@
         "sentiment": "neutral",
         "source_type": "filing",
         "source": "cninfo",
+        "source_priority": 100,
         "url": "https://example.com/report.pdf",
         "source_url": "https://example.com/report.pdf",
         "summary": "Annual report filing",
@@ -142,6 +150,7 @@
       "last_synced_at": "2026-03-17T00:00:00Z",
       "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
+      "last_error_message": null,
       "source_metadata": {
         "selected_source": "cninfo",
         "selected_source_priority": 100,
@@ -173,6 +182,7 @@
       "last_synced_at": "2026-03-17T00:00:00Z",
       "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
+      "last_error_message": null,
       "source_metadata": {
         "selected_source": "derived",
         "selected_source_priority": 0,
@@ -204,6 +214,7 @@
       "last_synced_at": "2026-03-17T00:00:00Z",
       "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
+      "last_error_message": null,
       "source_metadata": {
         "selected_source": "derived",
         "selected_source_priority": 0,

@@ -32,6 +32,7 @@ class CompanyProfile(BaseModel):
     main_business: str | None = None
     business_scope: str | None = None
     source: str
+    source_priority: int | None = None
     updated_at: str | None = None
 
 
@@ -52,6 +53,7 @@ class DataStatus(BaseModel):
     last_synced_at: str | None = None
     last_success_at: str | None = None
     last_error_at: str | None = None
+    last_error_message: str | None = None
     source_metadata: SourceMetadata | None = None
 
 
@@ -60,6 +62,7 @@ class Event(BaseModel):
 
     event_id: str
     ticker: str
+    dedupe_key: str | None = None
     event_date: str | None = None
     title: str
     raw_title: str | None = None
@@ -68,6 +71,7 @@ class Event(BaseModel):
     sentiment: Literal["positive", "neutral", "negative"] | None = None
     source_type: Literal["filing", "exchange_search", "news", "derived"] | None = None
     source: str
+    source_priority: int | None = None
     url: str | None = None
     source_url: str | None = None
     summary: str | None = None
@@ -91,6 +95,7 @@ class FinancialSummary(BaseModel):
     roe: float | None = None
     gross_margin: float | None = None
     source: str
+    source_priority: int | None = None
     updated_at: str | None = None
 
 
@@ -108,6 +113,7 @@ class PriceDaily(BaseModel):
     change_pct: float | None = None
     turnover_rate: float | None = None
     source: str
+    source_priority: int | None = None
     updated_at: str | None = None
 
 
@@ -180,6 +186,7 @@ class CompanyOverview(BaseModel):
                         "main_business": None,
                         "business_scope": None,
                         "source": "tushare",
+                        "source_priority": 100,
                         "updated_at": "2026-03-17T00:00:00Z",
                     },
                     "data_status": {
@@ -189,6 +196,11 @@ class CompanyOverview(BaseModel):
                         "ttl_hours": 24,
                         "cache_hit": True,
                         "error_message": None,
+                        "last_synced_at": "2026-03-17T00:00:00Z",
+                        "last_success_at": "2026-03-17T00:00:00Z",
+                        "last_error_at": None,
+                        "last_error_message": None,
+                        "source_metadata": {"selected_source": "tushare", "selected_source_priority": 100, "fallback_used": False, "attempted_sources": ["tushare"]},
                     },
                 },
                 "latest_financial": {
@@ -206,6 +218,7 @@ class CompanyOverview(BaseModel):
                         "roe": 1.0,
                         "gross_margin": 30.0,
                         "source": "tushare",
+                        "source_priority": 100,
                         "updated_at": "2026-03-17T00:00:00Z",
                     },
                     "data_status": {
@@ -215,6 +228,11 @@ class CompanyOverview(BaseModel):
                         "ttl_hours": 24,
                         "cache_hit": True,
                         "error_message": None,
+                        "last_synced_at": "2026-03-17T00:00:00Z",
+                        "last_success_at": "2026-03-17T00:00:00Z",
+                        "last_error_at": None,
+                        "last_error_message": None,
+                        "source_metadata": {"selected_source": "tushare", "selected_source_priority": 100, "fallback_used": False, "attempted_sources": ["tushare"]},
                     },
                 },
                 "latest_price": {
@@ -230,6 +248,7 @@ class CompanyOverview(BaseModel):
                         "change_pct": 9.5,
                         "turnover_rate": 2.0,
                         "source": "akshare",
+                        "source_priority": 90,
                         "updated_at": "2026-03-17T00:00:00Z",
                     },
                     "data_status": {
@@ -239,6 +258,11 @@ class CompanyOverview(BaseModel):
                         "ttl_hours": 24,
                         "cache_hit": True,
                         "error_message": None,
+                        "last_synced_at": "2026-03-17T00:00:00Z",
+                        "last_success_at": "2026-03-17T00:00:00Z",
+                        "last_error_at": None,
+                        "last_error_message": None,
+                        "source_metadata": {"selected_source": "akshare", "selected_source_priority": 90, "fallback_used": False, "attempted_sources": ["akshare", "tushare"]},
                     },
                 },
                 "recent_events": {
@@ -246,6 +270,7 @@ class CompanyOverview(BaseModel):
                         {
                             "event_id": "evt-1",
                             "ticker": "000001.SZ",
+                            "dedupe_key": "evt-1",
                             "event_date": "2026-03-16",
                             "title": "Annual report disclosed",
                             "raw_title": "Annual report disclosed",
@@ -254,7 +279,9 @@ class CompanyOverview(BaseModel):
                             "sentiment": "neutral",
                             "source_type": "filing",
                             "source": "cninfo",
+                            "source_priority": 100,
                             "url": "https://example.com/report.pdf",
+                            "source_url": "https://example.com/report.pdf",
                             "summary": "Annual report filing",
                             "updated_at": "2026-03-17T00:00:00Z",
                             "importance": "high",
@@ -267,6 +294,11 @@ class CompanyOverview(BaseModel):
                         "ttl_hours": 24,
                         "cache_hit": True,
                         "error_message": None,
+                        "last_synced_at": "2026-03-17T00:00:00Z",
+                        "last_success_at": "2026-03-17T00:00:00Z",
+                        "last_error_at": None,
+                        "last_error_message": None,
+                        "source_metadata": {"selected_source": "cninfo", "selected_source_priority": 100, "fallback_used": False, "attempted_sources": ["cninfo", "exchange_search"]},
                     },
                 },
                 "risk_flags": {
@@ -286,6 +318,11 @@ class CompanyOverview(BaseModel):
                         "ttl_hours": 24,
                         "cache_hit": True,
                         "error_message": None,
+                        "last_synced_at": "2026-03-17T00:00:00Z",
+                        "last_success_at": "2026-03-17T00:00:00Z",
+                        "last_error_at": None,
+                        "last_error_message": None,
+                        "source_metadata": {"selected_source": "derived", "selected_source_priority": 0, "fallback_used": False, "attempted_sources": ["derived"]},
                     },
                 },
                 "signals": {
@@ -306,6 +343,11 @@ class CompanyOverview(BaseModel):
                         "ttl_hours": 24,
                         "cache_hit": True,
                         "error_message": None,
+                        "last_synced_at": "2026-03-17T00:00:00Z",
+                        "last_success_at": "2026-03-17T00:00:00Z",
+                        "last_error_at": None,
+                        "last_error_message": None,
+                        "source_metadata": {"selected_source": "derived", "selected_source_priority": 0, "fallback_used": False, "attempted_sources": ["derived"]},
                     },
                 },
             }
