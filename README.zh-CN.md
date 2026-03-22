@@ -132,6 +132,49 @@ docker compose up -d searxng
 uvicorn app.main:app --reload
 ```
 
+## 测试
+
+当前仓库直接使用 `pytest`，还没有单独的 `make test` 命令。
+
+跑全量测试：
+
+```bash
+pytest
+```
+
+常用的局部跑法：
+
+```bash
+pytest -x -vv
+pytest tests/test_stock_api.py
+pytest tests/test_research_api.py
+pytest tests/test_content_extractor.py
+pytest tests/test_stock_service.py
+```
+
+当前测试大致分成三层：
+
+- 接口测试：用 `TestClient` 校验 FastAPI 路由 contract
+- 单元测试：覆盖 normalizer、planner、collector、extractor helper、service 逻辑
+- 轻量集成测试：用 fake 依赖验证脚本和数据流行为
+
+现有代表性测试文件：
+
+- `tests/test_stock_api.py`
+- `tests/test_research_api.py`
+- `tests/test_stock_service.py`
+- `tests/test_stock_normalizers.py`
+- `tests/test_content_extractor.py`
+- `tests/test_sync_stock_script.py`
+
+当前还建议继续补的测试点：
+
+- `/search` 路由
+- `/extract` 路由
+- `app/providers/searxng.py`
+- `app/extractors/content.py` 的完整抽取流程
+- `app/db/sqlite.py` 的直接仓储测试
+
 ## 关键环境变量
 
 ```env

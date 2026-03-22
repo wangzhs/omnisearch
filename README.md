@@ -26,6 +26,8 @@ There is no indexing engine, ranking model, auth, billing, admin dashboard, or L
 
 The stock layer is the primary contract of this repository.
 
+Storage defaults to SQLite for local use. The repository layer is kept narrow so a future PostgreSQL implementation can replace it without changing the API contract.
+
 Core internal entities:
 
 - `company_profile`
@@ -53,7 +55,15 @@ Overview is the recommended entry point for agents because it aggregates:
 - latest daily price
 - recent events
 - risk flags
-- `data_status` for company, financials, prices, and events
+- derived overview signals
+- per-section `data_status` for company, financials, prices, events, and risk flags
+
+Additional docs:
+
+- [Stock API](docs/stock-api.md)
+- [Stock Data Model](docs/stock-data-model.md)
+- [Sync Flow](docs/sync-flow.md)
+- [Source Priority](docs/source-priority.md)
 
 ## Project Structure
 
@@ -124,6 +134,49 @@ docker compose up -d searxng
 ```bash
 uvicorn app.main:app --reload
 ```
+
+## Testing
+
+The repository currently uses `pytest` directly. There is no dedicated `make test` target yet.
+
+Run the full suite:
+
+```bash
+pytest
+```
+
+Useful focused runs:
+
+```bash
+pytest -x -vv
+pytest tests/test_stock_api.py
+pytest tests/test_research_api.py
+pytest tests/test_content_extractor.py
+pytest tests/test_stock_service.py
+```
+
+Current test coverage is split into three practical layers:
+
+- API tests: FastAPI route contract checks with `TestClient`
+- unit tests: normalizers, planners, collectors, extractor helpers, and service logic
+- lightweight integration tests: script and data-flow behavior with fakes
+
+Representative test files:
+
+- `tests/test_stock_api.py`
+- `tests/test_research_api.py`
+- `tests/test_stock_service.py`
+- `tests/test_stock_normalizers.py`
+- `tests/test_content_extractor.py`
+- `tests/test_sync_stock_script.py`
+
+Areas that still need more coverage:
+
+- `/search` route behavior
+- `/extract` route behavior
+- `app/providers/searxng.py`
+- the full extraction path in `app/extractors/content.py`
+- direct SQLite repository tests in `app/db/sqlite.py`
 
 ## Key Env Vars
 
@@ -199,6 +252,25 @@ Recommended first call for agents:
 curl "http://localhost:8000/company/000001/overview?refresh=true"
 ```
 
+Example overview response shape:
+
+```json
+{
+  "ticker": "000001.SZ",
+  "company": {
+    "data": { "ticker": "000001.SZ", "name": "Ping An Bank", "source": "tushare" },
+    "data_status": {
+      "status": "fresh",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
+      "ttl_hours": 24,
+      "cache_hit": true,
+      "error_message": null
+    }
+  }
+}
+```
+
 ### Company Profile
 
 ```bash
@@ -257,6 +329,18 @@ curl "http://localhost:8000/company/002837/events?limit=10&refresh=true&debug=tr
 
 ```bash
 python -m app.scripts.sync_stock --tickers 000001,002837 --refresh --price-limit 60 --event-limit 10
+```
+
+Incremental sync:
+
+```bash
+python -m app.scripts.sync_stock --tickers 000001,002837 --incremental --json-report out/sync-report.json
+```
+
+Dry run:
+
+```bash
+python -m app.scripts.sync_stock --tickers 000001 --dry-run --skip-overview --verbose
 ```
 
 Or via `make`:
