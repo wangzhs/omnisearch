@@ -120,6 +120,12 @@ class SQLiteRepository:
                     dataset TEXT NOT NULL,
                     ticker TEXT NOT NULL,
                     synced_at TEXT NOT NULL,
+                    last_synced_at TEXT,
+                    last_success_at TEXT,
+                    last_error_at TEXT,
+                    last_error_message TEXT,
+                    records_written INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
                     PRIMARY KEY (dataset, ticker)
                 );
                 """
@@ -142,6 +148,12 @@ class SQLiteRepository:
                 "ALTER TABLE financial_summary ADD COLUMN source_priority INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE price_daily ADD COLUMN dedupe_key TEXT",
                 "ALTER TABLE price_daily ADD COLUMN source_priority INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE sync_state ADD COLUMN last_synced_at TEXT",
+                "ALTER TABLE sync_state ADD COLUMN last_success_at TEXT",
+                "ALTER TABLE sync_state ADD COLUMN last_error_at TEXT",
+                "ALTER TABLE sync_state ADD COLUMN last_error_message TEXT",
+                "ALTER TABLE sync_state ADD COLUMN records_written INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE sync_state ADD COLUMN duration_ms INTEGER",
                 "CREATE INDEX IF NOT EXISTS idx_event_dedupe_key ON event (ticker, dedupe_key)",
             ):
                 try:
@@ -462,27 +474,87 @@ class SQLiteRepository:
         return [self._price_from_row(row) for row in rows]
 
     def mark_synced(self, dataset: str, ticker: str, synced_at: str) -> None:
+        self.record_sync_result(dataset, ticker, synced_at, success=True)
+
+    def record_sync_result(
+        self,
+        dataset: str,
+        ticker: str,
+        synced_at: str,
+        *,
+        success: bool,
+        error_message: str | None = None,
+        records_written: int = 0,
+        duration_ms: int | None = None,
+    ) -> None:
         with self.connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT synced_at, last_synced_at, last_success_at, last_error_at, last_error_message, records_written, duration_ms
+                FROM sync_state
+                WHERE dataset = ? AND ticker = ?
+                """,
+                (dataset, ticker),
+            ).fetchone()
+            last_success_at = synced_at if success else (existing["last_success_at"] if existing else None)
+            last_error_at = None if success else synced_at
+            last_error_message = None if success else error_message
             connection.execute(
                 """
-                INSERT INTO sync_state (dataset, ticker, synced_at)
-                VALUES (?, ?, ?)
+                INSERT INTO sync_state (
+                    dataset, ticker, synced_at, last_synced_at, last_success_at,
+                    last_error_at, last_error_message, records_written, duration_ms
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(dataset, ticker) DO UPDATE SET
-                    synced_at=excluded.synced_at
+                    synced_at=excluded.synced_at,
+                    last_synced_at=excluded.last_synced_at,
+                    last_success_at=excluded.last_success_at,
+                    last_error_at=excluded.last_error_at,
+                    last_error_message=excluded.last_error_message,
+                    records_written=excluded.records_written,
+                    duration_ms=excluded.duration_ms
                 """,
-                (dataset, ticker, synced_at),
+                (
+                    dataset,
+                    ticker,
+                    synced_at,
+                    synced_at,
+                    last_success_at,
+                    last_error_at,
+                    last_error_message,
+                    records_written,
+                    duration_ms,
+                ),
             )
 
     def get_last_synced_at(self, dataset: str, ticker: str) -> str | None:
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT synced_at FROM sync_state WHERE dataset = ? AND ticker = ?",
+                "SELECT COALESCE(last_synced_at, synced_at) AS last_synced_at FROM sync_state WHERE dataset = ? AND ticker = ?",
                 (dataset, ticker),
             ).fetchone()
-        return row["synced_at"] if row else None
+        return row["last_synced_at"] if row else None
 
-    def list_sync_state(self, ticker: str | None = None) -> list[dict[str, str]]:
-        query = "SELECT dataset, ticker, synced_at FROM sync_state"
+    def get_sync_state(self, dataset: str, ticker: str) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT dataset, ticker, synced_at, last_synced_at, last_success_at, last_error_at,
+                       last_error_message, records_written, duration_ms
+                FROM sync_state
+                WHERE dataset = ? AND ticker = ?
+                """,
+                (dataset, ticker),
+            ).fetchone()
+        return self._sync_state_from_row(row) if row else None
+
+    def list_sync_state(self, ticker: str | None = None) -> list[dict]:
+        query = """
+            SELECT dataset, ticker, synced_at, last_synced_at, last_success_at, last_error_at,
+                   last_error_message, records_written, duration_ms
+            FROM sync_state
+        """
         params: tuple[object, ...] = ()
         if ticker:
             query += " WHERE ticker = ?"
@@ -490,7 +562,7 @@ class SQLiteRepository:
         query += " ORDER BY ticker ASC, dataset ASC"
         with self.connect() as connection:
             rows = connection.execute(query, params).fetchall()
-        return [{"dataset": row["dataset"], "ticker": row["ticker"], "synced_at": row["synced_at"]} for row in rows]
+        return [self._sync_state_from_row(row) for row in rows]
 
     def _company_from_row(self, row: sqlite3.Row) -> CompanyProfile:
         return CompanyProfile(
@@ -530,6 +602,7 @@ class SQLiteRepository:
             source=row["source"],
             source_priority=row["source_priority"],
             url=row["url"],
+            source_url=row["url"],
             summary=row["summary"],
             importance=row["importance"],
             updated_at=row["updated_at"],
@@ -575,6 +648,24 @@ class SQLiteRepository:
             updated_at=row["updated_at"],
             raw=json.loads(row["raw_json"]),
         )
+
+    def _sync_state_from_row(self, row: sqlite3.Row) -> dict:
+        last_synced_at = row["last_synced_at"] or row["synced_at"]
+        last_success_at = row["last_success_at"] or row["synced_at"]
+        last_error_at = row["last_error_at"]
+        status = "failed" if last_error_at and (not last_success_at or last_error_at >= last_success_at) else "ok"
+        return {
+            "dataset": row["dataset"],
+            "ticker": row["ticker"],
+            "status": status,
+            "synced_at": row["synced_at"],
+            "last_synced_at": last_synced_at,
+            "last_success_at": last_success_at,
+            "last_error_at": last_error_at,
+            "last_error_message": row["last_error_message"],
+            "records_written": row["records_written"],
+            "duration_ms": row["duration_ms"],
+        }
 
 
 _repository: SQLiteRepository | None = None

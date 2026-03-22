@@ -15,6 +15,7 @@ def test_build_data_status_returns_fresh_for_recent_data() -> None:
     assert status.status == "fresh"
     assert status.cache_hit is False
     assert status.source == "tushare"
+    assert status.source_metadata.selected_source == "tushare"
 
 
 def test_build_data_status_returns_stale_for_expired_cache() -> None:
@@ -44,6 +45,24 @@ def test_build_data_status_returns_failed_when_fetch_failed() -> None:
 
     assert status.status == "failed"
     assert status.error_message == "timeout"
+
+
+def test_build_data_status_marks_fallback_source_usage() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+
+    status = service._build_data_status(
+        source="tushare",
+        updated_at="2099-01-01T00:00:00Z",
+        cache_hit=False,
+        source_metadata=service._build_source_metadata(
+            "tushare",
+            attempted_sources=["akshare", "tushare"],
+            fallback_used=True,
+        ),
+    )
+
+    assert status.source_metadata.fallback_used is True
+    assert status.source_metadata.attempted_sources == ["akshare", "tushare"]
 
 
 def test_build_data_status_returns_missing_when_source_absent() -> None:

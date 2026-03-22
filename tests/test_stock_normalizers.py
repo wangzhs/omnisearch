@@ -28,6 +28,7 @@ def test_event_normalization_applies_stable_taxonomy_and_sentiment() -> None:
     assert event.source_type == "filing"
     assert event.raw_title == "关于股东减持计划的公告"
     assert event.importance == "high"
+    assert event.source_url == "https://static.cninfo.com.cn/finalpage/test.pdf"
 
 
 def test_event_dedupe_key_is_stable() -> None:

@@ -34,6 +34,20 @@ class StockRepository(Protocol):
 
     def mark_synced(self, dataset: str, ticker: str, synced_at: str) -> None: ...
 
+    def record_sync_result(
+        self,
+        dataset: str,
+        ticker: str,
+        synced_at: str,
+        *,
+        success: bool,
+        error_message: str | None = None,
+        records_written: int = 0,
+        duration_ms: int | None = None,
+    ) -> None: ...
+
     def get_last_synced_at(self, dataset: str, ticker: str) -> str | None: ...
 
-    def list_sync_state(self, ticker: str | None = None) -> list[dict[str, str]]: ...
+    def get_sync_state(self, dataset: str, ticker: str) -> dict | None: ...
+
+    def list_sync_state(self, ticker: str | None = None) -> list[dict]: ...

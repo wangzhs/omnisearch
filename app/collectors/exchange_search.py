@@ -6,6 +6,7 @@ from app.normalizers.stock import (
     build_event_dedupe_key,
     normalize_event_importance,
     normalize_event_sentiment,
+    normalize_source_url,
     normalize_event_type,
     normalize_ticker_input,
 )
@@ -92,7 +93,6 @@ class ExchangeSearchCollector:
                 event_date = self._extract_event_date(item.url, item.title, item.snippet)
                 event_type = normalize_event_type(item.title, "exchange_disclosure")
                 normalized_importance = self._compute_importance(item.title, item.snippet, event_type)
-                normalized_url = self._normalize_event_url(item.url)
                 results.append(
                     {
                         "event_id": build_event_dedupe_key(normalized, item.title, event_date, normalized_url),
@@ -108,6 +108,7 @@ class ExchangeSearchCollector:
                         "source": self.source,
                         "source_priority": SOURCE_PRIORITY[self.source],
                         "url": normalized_url,
+                        "source_url": normalized_url,
                         "summary": item.snippet,
                         "importance": normalized_importance,
                         "raw": {
@@ -185,6 +186,6 @@ class ExchangeSearchCollector:
         )
 
     def _normalize_event_url(self, url: str) -> str:
-        normalized = url.replace("http://", "https://")
+        normalized = normalize_source_url(url) or ""
         normalized = normalized.replace("/download/disc/", "/disc/")
         return normalized

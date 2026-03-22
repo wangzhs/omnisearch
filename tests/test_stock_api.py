@@ -17,6 +17,26 @@ def assert_matches_snapshot(name: str, payload: dict) -> None:
 
 
 class FakeStockService:
+    @staticmethod
+    def _data_status(source: str | None, *, status: str = "fresh", fallback_used: bool = False, attempted_sources: list[str] | None = None):
+        return {
+            "status": status,
+            "updated_at": "2026-03-17T00:00:00Z" if status != "missing" else None,
+            "source": source,
+            "ttl_hours": 24,
+            "cache_hit": True if status != "missing" else False,
+            "error_message": None,
+            "last_synced_at": "2026-03-17T00:00:00Z" if status != "missing" else None,
+            "last_success_at": "2026-03-17T00:00:00Z" if status != "missing" else None,
+            "last_error_at": None,
+            "source_metadata": {
+                "selected_source": source,
+                "selected_source_priority": None if source is None else {"tushare": 100, "cninfo": 100, "akshare": 90, "derived": 0}.get(source, 0),
+                "fallback_used": fallback_used,
+                "attempted_sources": attempted_sources or ([source] if source else []),
+            },
+        }
+
     def get_company(self, ticker: str, refresh: bool = False):
         return {
             "ticker": "000001.SZ",
@@ -52,6 +72,7 @@ class FakeStockService:
                 "source_type": "filing",
                 "source": "cninfo",
                 "url": "https://example.com/report.pdf",
+                "source_url": "https://example.com/report.pdf",
                 "summary": "Annual report filing",
                 "updated_at": "2026-03-17T00:00:00Z",
                 "importance": "high",
@@ -111,58 +132,23 @@ class FakeStockService:
             "ticker": "000001.SZ",
             "company": {
                 "data": self.get_company(ticker, refresh=refresh),
-                "data_status": {
-                    "status": "fresh",
-                    "updated_at": "2026-03-17T00:00:00Z",
-                    "source": "tushare",
-                    "ttl_hours": 24,
-                    "cache_hit": True,
-                    "error_message": None,
-                },
+                "data_status": self._data_status("tushare", attempted_sources=["tushare"]),
             },
             "latest_financial": {
                 "data": self.list_financials(ticker, refresh=refresh)[0],
-                "data_status": {
-                    "status": "fresh",
-                    "updated_at": "2026-03-17T00:00:00Z",
-                    "source": "tushare",
-                    "ttl_hours": 24,
-                    "cache_hit": True,
-                    "error_message": None,
-                },
+                "data_status": self._data_status("tushare", attempted_sources=["tushare"]),
             },
             "latest_price": {
                 "data": self.list_prices(ticker, refresh=refresh)[0],
-                "data_status": {
-                    "status": "fresh",
-                    "updated_at": "2026-03-17T00:00:00Z",
-                    "source": "akshare",
-                    "ttl_hours": 24,
-                    "cache_hit": True,
-                    "error_message": None,
-                },
+                "data_status": self._data_status("akshare", attempted_sources=["akshare", "tushare"]),
             },
             "recent_events": {
                 "data": self.list_events(ticker, refresh=refresh),
-                "data_status": {
-                    "status": "fresh",
-                    "updated_at": "2026-03-17T00:00:00Z",
-                    "source": "cninfo",
-                    "ttl_hours": 24,
-                    "cache_hit": True,
-                    "error_message": None,
-                },
+                "data_status": self._data_status("cninfo", attempted_sources=["cninfo", "exchange_search"]),
             },
             "risk_flags": {
                 "data": self.get_risk_flags(ticker, refresh=refresh),
-                "data_status": {
-                    "status": "fresh",
-                    "updated_at": "2026-03-17T00:00:00Z",
-                    "source": "derived",
-                    "ttl_hours": 24,
-                    "cache_hit": True,
-                    "error_message": None,
-                },
+                "data_status": self._data_status("derived", attempted_sources=["derived"]),
             },
             "signals": {
                 "data": [
@@ -175,14 +161,7 @@ class FakeStockService:
                         "evidence": "Latest reported net profit is below zero.",
                     }
                 ],
-                "data_status": {
-                    "status": "fresh",
-                    "updated_at": "2026-03-17T00:00:00Z",
-                    "source": "derived",
-                    "ttl_hours": 24,
-                    "cache_hit": True,
-                    "error_message": None,
-                },
+                "data_status": self._data_status("derived", attempted_sources=["derived"]),
             },
         }
 
@@ -228,6 +207,7 @@ def test_company_overview_endpoint_returns_stock_snapshot(monkeypatch) -> None:
     assert payload["risk_flags"]["data"][0]["code"] == "negative_net_profit"
     assert payload["company"]["data_status"]["status"] == "fresh"
     assert payload["recent_events"]["data_status"]["source"] == "cninfo"
+    assert payload["latest_price"]["data_status"]["source_metadata"]["attempted_sources"] == ["akshare", "tushare"]
     assert "raw" not in payload["company"]["data"]
     assert "raw" not in payload["latest_financial"]["data"]
     assert "raw" not in payload["latest_price"]["data"]
@@ -269,19 +249,15 @@ def test_company_overview_falls_back_when_company_profile_missing(monkeypatch) -
                         "raw": {},
                     },
                     "data_status": {
-                        "status": "missing",
-                        "updated_at": None,
-                        "source": "tushare",
-                        "ttl_hours": 24,
+                        **self._data_status("tushare", status="missing", attempted_sources=["tushare"]),
                         "cache_hit": False,
-                        "error_message": None,
                     },
                 },
-                "latest_financial": {"data": self.list_financials(ticker, refresh=refresh)[0], "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "tushare", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
-                "latest_price": {"data": self.list_prices(ticker, refresh=refresh)[0], "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "akshare", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
-                "recent_events": {"data": self.list_events(ticker, refresh=refresh), "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "cninfo", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
-                "risk_flags": {"data": self.get_risk_flags(ticker, refresh=refresh), "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "derived", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
-                "signals": {"data": [], "data_status": {"status": "fresh", "updated_at": "2026-03-17T00:00:00Z", "source": "derived", "ttl_hours": 24, "cache_hit": True, "error_message": None}},
+                "latest_financial": {"data": self.list_financials(ticker, refresh=refresh)[0], "data_status": self._data_status("tushare", attempted_sources=["tushare"])},
+                "latest_price": {"data": self.list_prices(ticker, refresh=refresh)[0], "data_status": self._data_status("akshare", attempted_sources=["akshare", "tushare"])},
+                "recent_events": {"data": self.list_events(ticker, refresh=refresh), "data_status": self._data_status("cninfo", attempted_sources=["cninfo", "exchange_search"])},
+                "risk_flags": {"data": self.get_risk_flags(ticker, refresh=refresh), "data_status": self._data_status("derived", attempted_sources=["derived"])},
+                "signals": {"data": [], "data_status": self._data_status("derived", attempted_sources=["derived"])},
             }
 
     monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: PartialStockService())
@@ -618,6 +594,7 @@ def test_prices_debug_endpoint_returns_source_status(monkeypatch) -> None:
             return {
                 "ticker": "002837.SZ",
                 "items": [],
+                "data_status": FakeStockService._data_status("tushare", fallback_used=True, attempted_sources=["akshare", "tushare"]),
                 "debug": [
                     {"source": "akshare", "status": "error", "count": 0, "error": "empty reply"},
                     {"source": "tushare", "status": "empty", "count": 0, "error": None},
@@ -632,6 +609,7 @@ def test_prices_debug_endpoint_returns_source_status(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["ticker"] == "002837.SZ"
+    assert payload["data_status"]["source_metadata"]["fallback_used"] is True
     assert payload["debug"][0]["source"] == "akshare"
     assert payload["debug"][1]["status"] == "empty"
 
@@ -642,6 +620,7 @@ def test_events_debug_endpoint_returns_source_status(monkeypatch) -> None:
             return {
                 "ticker": "002837.SZ",
                 "items": [],
+                "data_status": FakeStockService._data_status("exchange_search", fallback_used=True, attempted_sources=["cninfo", "exchange_search"]),
                 "debug": [
                     {"source": "cninfo", "status": "empty", "count": 0, "kept_count": 0, "error": None},
                     {"source": "exchange_search", "status": "ok", "count": 12, "kept_count": 4, "error": None},
@@ -656,6 +635,7 @@ def test_events_debug_endpoint_returns_source_status(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["ticker"] == "002837.SZ"
+    assert payload["data_status"]["source_metadata"]["selected_source"] == "exchange_search"
     assert payload["debug"][0]["source"] == "cninfo"
     assert payload["debug"][1]["kept_count"] == 4
 
@@ -861,7 +841,18 @@ def test_health_sources_reports_source_configuration(monkeypatch) -> None:
 def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
     class FakeRepository:
         def list_sync_state(self, ticker: str | None = None):
-            return [{"dataset": "company_profile", "ticker": ticker or "000001.SZ", "synced_at": "2026-03-17T00:00:00Z"}]
+            return [{
+                "dataset": "company_profile",
+                "ticker": ticker or "000001.SZ",
+                "status": "ok",
+                "synced_at": "2026-03-17T00:00:00Z",
+                "last_synced_at": "2026-03-17T00:00:00Z",
+                "last_success_at": "2026-03-17T00:00:00Z",
+                "last_error_at": None,
+                "last_error_message": None,
+                "records_written": 1,
+                "duration_ms": 120,
+            }]
 
         def ping(self):
             return True
@@ -877,3 +868,5 @@ def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["items"][0]["dataset"] == "company_profile"
+    assert payload["items"][0]["records_written"] == 1
+    assert payload["items"][0]["duration_ms"] == 120

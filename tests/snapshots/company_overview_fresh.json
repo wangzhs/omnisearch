@@ -25,7 +25,18 @@
       "source": "tushare",
       "ttl_hours": 24,
       "cache_hit": true,
-      "error_message": null
+      "error_message": null,
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_error_at": null,
+      "source_metadata": {
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "fallback_used": false,
+        "attempted_sources": [
+          "tushare"
+        ]
+      }
     }
   },
   "latest_financial": {
@@ -51,7 +62,18 @@
       "source": "tushare",
       "ttl_hours": 24,
       "cache_hit": true,
-      "error_message": null
+      "error_message": null,
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_error_at": null,
+      "source_metadata": {
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "fallback_used": false,
+        "attempted_sources": [
+          "tushare"
+        ]
+      }
     }
   },
   "latest_price": {
@@ -75,7 +97,19 @@
       "source": "akshare",
       "ttl_hours": 24,
       "cache_hit": true,
-      "error_message": null
+      "error_message": null,
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_error_at": null,
+      "source_metadata": {
+        "selected_source": "akshare",
+        "selected_source_priority": 90,
+        "fallback_used": false,
+        "attempted_sources": [
+          "akshare",
+          "tushare"
+        ]
+      }
     }
   },
   "recent_events": {
@@ -92,6 +126,7 @@
         "source_type": "filing",
         "source": "cninfo",
         "url": "https://example.com/report.pdf",
+        "source_url": "https://example.com/report.pdf",
         "summary": "Annual report filing",
         "updated_at": "2026-03-17T00:00:00Z",
         "importance": "high"
@@ -103,7 +138,19 @@
       "source": "cninfo",
       "ttl_hours": 24,
       "cache_hit": true,
-      "error_message": null
+      "error_message": null,
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_error_at": null,
+      "source_metadata": {
+        "selected_source": "cninfo",
+        "selected_source_priority": 100,
+        "fallback_used": false,
+        "attempted_sources": [
+          "cninfo",
+          "exchange_search"
+        ]
+      }
     }
   },
   "risk_flags": {
@@ -122,7 +169,18 @@
       "source": "derived",
       "ttl_hours": 24,
       "cache_hit": true,
-      "error_message": null
+      "error_message": null,
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_error_at": null,
+      "source_metadata": {
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "fallback_used": false,
+        "attempted_sources": [
+          "derived"
+        ]
+      }
     }
   },
   "signals": {
@@ -142,7 +200,18 @@
       "source": "derived",
       "ttl_hours": 24,
       "cache_hit": true,
-      "error_message": null
+      "error_message": null,
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_error_at": null,
+      "source_metadata": {
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "fallback_used": false,
+        "attempted_sources": [
+          "derived"
+        ]
+      }
     }
   }
 }

@@ -37,6 +37,7 @@ class Event(BaseModel):
     source: str
     source_priority: int = 0
     url: str | None = None
+    source_url: str | None = None
     summary: str | None = None
     importance: str | None = None
     updated_at: str | None = None

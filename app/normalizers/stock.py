@@ -133,6 +133,14 @@ def build_event_dedupe_key(ticker: str, title: str, event_date: str | None, url:
     return f"{normalized}:{digest}"
 
 
+def normalize_source_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    normalized = url.strip().replace("http://", "https://")
+    normalized = normalized.split("#", maxsplit=1)[0]
+    return normalized
+
+
 def normalize_event_type(title: str, category: str | None = None) -> str:
     haystack = f"{category or ''} {title}".lower()
     for event_type, keywords in EVENT_TYPE_RULES:
@@ -172,7 +180,7 @@ def normalize_cninfo_event(ticker: str, raw: dict[str, Any]) -> Event:
         or normalize_date(raw.get("announcement_date"))
     )
     adjunct = raw.get("adjunctUrl") or raw.get("adjunct_url")
-    url = f"https://static.cninfo.com.cn/{adjunct.lstrip('/')}" if adjunct else None
+    url = normalize_source_url(f"https://static.cninfo.com.cn/{adjunct.lstrip('/')}") if adjunct else None
     category = raw.get("announcementType") or raw.get("announcement_type")
     event_type = normalize_event_type(title=title, category=category)
     summary = raw.get("announcementContent") or raw.get("summary")
@@ -193,6 +201,7 @@ def normalize_cninfo_event(ticker: str, raw: dict[str, Any]) -> Event:
         source="cninfo",
         source_priority=get_source_priority("cninfo"),
         url=url,
+        source_url=url,
         summary=summary,
         importance=normalize_event_importance(title, summary, event_type),
         raw=raw,

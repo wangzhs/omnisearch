@@ -108,6 +108,37 @@ def _dry_run_result(ticker: str, datasets: list[str], incremental: bool) -> dict
     }
 
 
+def _record_sync_result(
+    service: Any,
+    dataset: str,
+    ticker: str,
+    *,
+    success: bool,
+    synced_at: str,
+    error_message: str | None = None,
+    records_written: int = 0,
+    duration_ms: int | None = None,
+) -> None:
+    repository = getattr(service, "repository", None)
+    record_sync_result = getattr(repository, "record_sync_result", None)
+    if not callable(record_sync_result):
+        return
+    sync_dataset = SYNC_STATE_DATASET[dataset] or dataset
+    record_sync_result(
+        sync_dataset,
+        ticker,
+        synced_at,
+        success=success,
+        error_message=error_message,
+        records_written=records_written,
+        duration_ms=duration_ms,
+    )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: list[str]) -> dict[str, Any]:
     result: dict[str, Any] = {
         "ticker": ticker,
@@ -138,6 +169,7 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
             continue
 
         _log(args.verbose, f"[sync] ticker={ticker} dataset={dataset}")
+        started_at = time.perf_counter()
         if dataset == "company":
             try:
                 company = _retry_call(
@@ -149,9 +181,27 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                 )
                 result["company_name"] = company.name
                 record_dataset("company", "ok", source=company.source)
+                _record_sync_result(
+                    service,
+                    "company",
+                    ticker,
+                    success=True,
+                    synced_at=_utc_now(),
+                    records_written=1 if company else 0,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
             except Exception as exc:
                 errors["company_error"] = str(exc)
                 record_dataset("company", "failed", error=str(exc))
+                _record_sync_result(
+                    service,
+                    "company",
+                    ticker,
+                    success=False,
+                    synced_at=_utc_now(),
+                    error_message=str(exc),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
         elif dataset == "financials":
             try:
                 financials = _retry_call(
@@ -163,9 +213,27 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                 )
                 result["financial_count"] = len(financials)
                 record_dataset("financials", "ok", count=len(financials))
+                _record_sync_result(
+                    service,
+                    "financials",
+                    ticker,
+                    success=True,
+                    synced_at=_utc_now(),
+                    records_written=len(financials),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
             except Exception as exc:
                 errors["financial_error"] = str(exc)
                 record_dataset("financials", "failed", error=str(exc))
+                _record_sync_result(
+                    service,
+                    "financials",
+                    ticker,
+                    success=False,
+                    synced_at=_utc_now(),
+                    error_message=str(exc),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
         elif dataset == "prices":
             try:
                 prices_debug = _retry_call(
@@ -178,9 +246,27 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                 result["price_count"] = len(prices_debug.items)
                 result["price_debug"] = [item.model_dump() for item in prices_debug.debug]
                 record_dataset("prices", "ok", count=len(prices_debug.items))
+                _record_sync_result(
+                    service,
+                    "prices",
+                    ticker,
+                    success=True,
+                    synced_at=_utc_now(),
+                    records_written=len(prices_debug.items),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
             except Exception as exc:
                 errors["price_error"] = str(exc)
                 record_dataset("prices", "failed", error=str(exc))
+                _record_sync_result(
+                    service,
+                    "prices",
+                    ticker,
+                    success=False,
+                    synced_at=_utc_now(),
+                    error_message=str(exc),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
         elif dataset == "events":
             try:
                 events_debug = _retry_call(
@@ -193,9 +279,27 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                 result["event_count"] = len(events_debug.items)
                 result["event_debug"] = [item.model_dump() for item in events_debug.debug]
                 record_dataset("events", "ok", count=len(events_debug.items))
+                _record_sync_result(
+                    service,
+                    "events",
+                    ticker,
+                    success=True,
+                    synced_at=_utc_now(),
+                    records_written=len(events_debug.items),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
             except Exception as exc:
                 errors["event_error"] = str(exc)
                 record_dataset("events", "failed", error=str(exc))
+                _record_sync_result(
+                    service,
+                    "events",
+                    ticker,
+                    success=False,
+                    synced_at=_utc_now(),
+                    error_message=str(exc),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
         elif dataset == "overview":
             try:
                 overview = _retry_call(
@@ -220,9 +324,27 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                     },
                 }
                 record_dataset("overview", "ok")
+                _record_sync_result(
+                    service,
+                    "overview",
+                    ticker,
+                    success=True,
+                    synced_at=_utc_now(),
+                    records_written=1,
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
             except Exception as exc:
                 errors["overview_error"] = str(exc)
                 record_dataset("overview", "failed", error=str(exc))
+                _record_sync_result(
+                    service,
+                    "overview",
+                    ticker,
+                    success=False,
+                    synced_at=_utc_now(),
+                    error_message=str(exc),
+                    duration_ms=int((time.perf_counter() - started_at) * 1000),
+                )
 
     if errors:
         result["status"] = "partial"

@@ -35,6 +35,13 @@ class CompanyProfile(BaseModel):
     updated_at: str | None = None
 
 
+class SourceMetadata(BaseModel):
+    selected_source: str | None = None
+    selected_source_priority: int | None = None
+    fallback_used: bool = False
+    attempted_sources: list[str] = Field(default_factory=list)
+
+
 class DataStatus(BaseModel):
     status: Literal["fresh", "stale", "missing", "failed"]
     updated_at: str | None = None
@@ -42,6 +49,10 @@ class DataStatus(BaseModel):
     ttl_hours: int
     cache_hit: bool = False
     error_message: str | None = None
+    last_synced_at: str | None = None
+    last_success_at: str | None = None
+    last_error_at: str | None = None
+    source_metadata: SourceMetadata | None = None
 
 
 class Event(BaseModel):
@@ -58,6 +69,7 @@ class Event(BaseModel):
     source_type: Literal["filing", "exchange_search", "news", "derived"] | None = None
     source: str
     url: str | None = None
+    source_url: str | None = None
     summary: str | None = None
     updated_at: str | None = None
     importance: Literal["high", "medium", "low"] | None = None
@@ -319,6 +331,7 @@ class PriceSourceDebug(BaseModel):
 class PriceListDebugResponse(BaseModel):
     ticker: str
     items: list[PriceDaily] = Field(default_factory=list)
+    data_status: DataStatus
     debug: list[PriceSourceDebug] = Field(default_factory=list)
 
 
@@ -333,6 +346,7 @@ class EventSourceDebug(BaseModel):
 class EventListDebugResponse(BaseModel):
     ticker: str
     items: list[Event] = Field(default_factory=list)
+    data_status: DataStatus
     debug: list[EventSourceDebug] = Field(default_factory=list)
 
 

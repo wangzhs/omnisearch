@@ -5,6 +5,12 @@ from app.scripts import sync_stock
 
 
 def test_sync_stock_script_outputs_summary(monkeypatch, capsys) -> None:
+    recorded = []
+
+    class FakeRepository:
+        def record_sync_result(self, dataset, ticker, synced_at, **kwargs):
+            recorded.append({"dataset": dataset, "ticker": ticker, "synced_at": synced_at, **kwargs})
+
     class FakePriceDebug:
         def __init__(self):
             self.items = [object(), object()]
@@ -15,6 +21,8 @@ def test_sync_stock_script_outputs_summary(monkeypatch, capsys) -> None:
         source = "tushare"
 
     class FakeService:
+        repository = FakeRepository()
+
         def get_company(self, ticker: str, refresh: bool = False):
             return FakeCompany()
 
@@ -106,6 +114,8 @@ def test_sync_stock_script_outputs_summary(monkeypatch, capsys) -> None:
     assert payload["results"][0]["summary"]["ok_dataset_count"] == 5
     assert payload["summary"]["ticker_count"] == 2
     assert payload["failure_count"] == 0
+    assert any(item["dataset"] == "overview" for item in recorded)
+    assert all(item["duration_ms"] is not None for item in recorded)
 
 
 def test_sync_stock_script_supports_dry_run(monkeypatch, capsys) -> None:

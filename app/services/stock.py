@@ -30,6 +30,7 @@ from app.schemas.stock import (
     PriceListDebugResponse,
     PriceSourceDebug,
     RiskFlag,
+    SourceMetadata,
     StockResearchContext,
     TimelineItem,
     OverviewSignal,
@@ -62,8 +63,8 @@ class StockDataService:
 
     def list_events_with_debug(self, ticker: str, limit: int = 20, refresh: bool = False) -> EventListDebugResponse:
         normalized = normalize_ticker_input(ticker)
-        events, _, debug = self._load_events(normalized, limit=limit, refresh=refresh)
-        return EventListDebugResponse(ticker=normalized, items=events, debug=debug)
+        events, data_status, debug = self._load_events(normalized, limit=limit, refresh=refresh)
+        return EventListDebugResponse(ticker=normalized, items=events, data_status=data_status, debug=debug)
 
     def list_financials(self, ticker: str, limit: int = 8, refresh: bool = False) -> list[FinancialSummary]:
         items, _ = self._load_financials(normalize_ticker_input(ticker), limit=limit, refresh=refresh)
@@ -95,14 +96,14 @@ class StockDataService:
         refresh: bool = False,
     ) -> PriceListDebugResponse:
         normalized = normalize_ticker_input(ticker)
-        prices, _, debug = self._load_prices(
+        prices, data_status, debug = self._load_prices(
             normalized,
             limit=limit,
             start_date=start_date,
             end_date=end_date,
             refresh=refresh,
         )
-        return PriceListDebugResponse(ticker=normalized, items=prices, debug=debug)
+        return PriceListDebugResponse(ticker=normalized, items=prices, data_status=data_status, debug=debug)
 
     def get_overview(self, ticker: str, refresh: bool = False) -> CompanyOverview:
         normalized = normalize_ticker_input(ticker)
@@ -327,12 +328,15 @@ class StockDataService:
 
     def _load_company(self, ticker: str, refresh: bool = False) -> tuple[CompanyProfile | None, DataStatus]:
         cached = self.repository.get_company_profile(ticker)
-        last_synced_at = self.repository.get_last_synced_at("company_profile", ticker)
+        sync_state = self._get_sync_state("company_profile", ticker)
+        last_synced_at = self._sync_state_value(sync_state, "last_synced_at")
         if cached and not self._should_refresh("company_profile", ticker, refresh):
             return cached, self._build_data_status(
                 source=cached.source,
                 updated_at=cached.updated_at or last_synced_at,
                 cache_hit=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(cached.source, attempted_sources=["tushare"]),
             )
 
         try:
@@ -344,17 +348,27 @@ class StockDataService:
                     updated_at=cached.updated_at or last_synced_at,
                     cache_hit=True,
                     error_message=str(exc),
+                    sync_state=sync_state,
+                    source_metadata=self._build_source_metadata(cached.source, attempted_sources=["tushare"]),
                 )
             return None, self._build_data_status(
                 source="tushare",
                 updated_at=last_synced_at,
                 error_message=str(exc),
                 failed=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata("tushare", attempted_sources=["tushare"]),
             )
 
         if raw:
             profile = self.repository.upsert_company_profile(normalize_company_profile(ticker, raw))
-            return profile, self._build_data_status(source=profile.source, updated_at=profile.updated_at, cache_hit=False)
+            return profile, self._build_data_status(
+                source=profile.source,
+                updated_at=profile.updated_at,
+                cache_hit=False,
+                sync_state=self._get_sync_state("company_profile", ticker),
+                source_metadata=self._build_source_metadata(profile.source, attempted_sources=["tushare"]),
+            )
 
         if cached:
             return cached, self._build_data_status(
@@ -362,8 +376,17 @@ class StockDataService:
                 updated_at=cached.updated_at or last_synced_at,
                 cache_hit=True,
                 error_message="Upstream returned empty company profile.",
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(cached.source, attempted_sources=["tushare"]),
             )
-        return None, self._build_data_status(source="tushare", updated_at=None, cache_hit=False, missing=True)
+        return None, self._build_data_status(
+            source="tushare",
+            updated_at=None,
+            cache_hit=False,
+            missing=True,
+            sync_state=sync_state,
+            source_metadata=self._build_source_metadata("tushare", attempted_sources=["tushare"]),
+        )
 
     def _load_financials(
         self,
@@ -372,12 +395,15 @@ class StockDataService:
         refresh: bool = False,
     ) -> tuple[list[FinancialSummary], DataStatus]:
         cached = self.repository.list_financial_summaries(ticker, limit=limit)
-        last_synced_at = self.repository.get_last_synced_at("financial_summary", ticker)
+        sync_state = self._get_sync_state("financial_summary", ticker)
+        last_synced_at = self._sync_state_value(sync_state, "last_synced_at")
         if cached and not self._should_refresh("financial_summary", ticker, refresh):
             return cached, self._build_data_status(
                 source=cached[0].source,
                 updated_at=last_synced_at or cached[0].updated_at,
                 cache_hit=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(cached[0].source, attempted_sources=["tushare"]),
             )
 
         try:
@@ -389,12 +415,16 @@ class StockDataService:
                     updated_at=last_synced_at or cached[0].updated_at,
                     cache_hit=True,
                     error_message=str(exc),
+                    sync_state=sync_state,
+                    source_metadata=self._build_source_metadata(cached[0].source, attempted_sources=["tushare"]),
                 )
             return [], self._build_data_status(
                 source="tushare",
                 updated_at=last_synced_at,
                 error_message=str(exc),
                 failed=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata("tushare", attempted_sources=["tushare"]),
             )
 
         items = [normalize_financial_summary(ticker, raw) for raw in raw_items]
@@ -405,6 +435,8 @@ class StockDataService:
                 source=latest[0].source,
                 updated_at=latest[0].updated_at or last_synced_at,
                 cache_hit=False,
+                sync_state=self._get_sync_state("financial_summary", ticker),
+                source_metadata=self._build_source_metadata(latest[0].source, attempted_sources=["tushare"]),
             )
         if cached:
             return cached, self._build_data_status(
@@ -412,8 +444,17 @@ class StockDataService:
                 updated_at=last_synced_at or cached[0].updated_at,
                 cache_hit=True,
                 error_message="Upstream returned empty financial summaries.",
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(cached[0].source, attempted_sources=["tushare"]),
             )
-        return [], self._build_data_status(source="tushare", updated_at=None, cache_hit=False, missing=True)
+        return [], self._build_data_status(
+            source="tushare",
+            updated_at=None,
+            cache_hit=False,
+            missing=True,
+            sync_state=sync_state,
+            source_metadata=self._build_source_metadata("tushare", attempted_sources=["tushare"]),
+        )
 
     def _load_prices(
         self,
@@ -424,13 +465,16 @@ class StockDataService:
         refresh: bool = False,
     ) -> tuple[list[PriceDaily], DataStatus, list[PriceSourceDebug]]:
         cached = self.repository.list_prices(ticker, limit=limit, start_date=start_date, end_date=end_date)
-        last_synced_at = self.repository.get_last_synced_at("price_daily", ticker)
+        sync_state = self._get_sync_state("price_daily", ticker)
+        last_synced_at = self._sync_state_value(sync_state, "last_synced_at")
         if cached and not self._should_refresh("price_daily", ticker, refresh):
             items = list(reversed(cached))
             return items, self._build_data_status(
                 source=items[-1].source,
                 updated_at=last_synced_at or items[-1].updated_at,
                 cache_hit=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(items[-1].source, attempted_sources=["cache"]),
             ), [PriceSourceDebug(source="cache", status="hit", count=len(items))]
 
         debug: list[PriceSourceDebug] = []
@@ -454,10 +498,17 @@ class StockDataService:
         if prices:
             self.repository.upsert_prices(ticker, prices)
             latest = list(reversed(self.repository.list_prices(ticker, limit=limit, start_date=start_date, end_date=end_date)))
+            selected_source = latest[-1].source if latest else None
             return latest, self._build_data_status(
-                source=latest[-1].source,
+                source=selected_source,
                 updated_at=last_synced_at or latest[-1].updated_at,
                 cache_hit=False,
+                sync_state=self._get_sync_state("price_daily", ticker),
+                source_metadata=self._build_source_metadata(
+                    selected_source,
+                    attempted_sources=[item.source for item in debug],
+                    fallback_used=bool(selected_source and debug and selected_source != debug[0].source),
+                ),
             ), debug
         if cached:
             items = list(reversed(cached))
@@ -466,6 +517,8 @@ class StockDataService:
                 updated_at=last_synced_at or items[-1].updated_at,
                 cache_hit=True,
                 error_message=last_error or "Upstream returned empty price rows.",
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(items[-1].source, attempted_sources=[item.source for item in debug]),
             ), debug
         if last_error:
             return [], self._build_data_status(
@@ -473,8 +526,17 @@ class StockDataService:
                 updated_at=last_synced_at,
                 error_message=last_error,
                 failed=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata("akshare", attempted_sources=[item.source for item in debug]),
             ), debug
-        return [], self._build_data_status(source=None, updated_at=None, cache_hit=False, missing=True), debug
+        return [], self._build_data_status(
+            source=None,
+            updated_at=None,
+            cache_hit=False,
+            missing=True,
+            sync_state=sync_state,
+            source_metadata=self._build_source_metadata(None, attempted_sources=[item.source for item in debug]),
+        ), debug
 
     def _load_events(
         self,
@@ -483,12 +545,15 @@ class StockDataService:
         refresh: bool = False,
     ) -> tuple[list[Event], DataStatus, list[EventSourceDebug]]:
         cached = self.repository.list_events(ticker, limit=limit)
-        last_synced_at = self.repository.get_last_synced_at("event", ticker)
+        sync_state = self._get_sync_state("event", ticker)
+        last_synced_at = self._sync_state_value(sync_state, "last_synced_at")
         if cached and not self._should_refresh("event", ticker, refresh):
             return cached, self._build_data_status(
                 source=cached[0].source,
                 updated_at=last_synced_at or cached[0].updated_at,
                 cache_hit=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(cached[0].source, attempted_sources=["cache"]),
             ), [EventSourceDebug(source="cache", status="hit", count=len(cached), kept_count=len(cached))]
 
         debug: list[EventSourceDebug] = []
@@ -542,11 +607,18 @@ class StockDataService:
             else:
                 self.repository.upsert_events(ticker, deduped)
             latest = self.repository.list_events(ticker, limit=limit)
+            selected_source = latest[0].source if latest else None
             return latest, self._build_data_status(
-                source=latest[0].source,
+                source=selected_source,
                 updated_at=last_synced_at or latest[0].updated_at,
                 cache_hit=False,
                 error_message=error_message,
+                sync_state=self._get_sync_state("event", ticker),
+                source_metadata=self._build_source_metadata(
+                    selected_source,
+                    attempted_sources=[item.source for item in debug],
+                    fallback_used=bool(selected_source and debug and selected_source != debug[0].source),
+                ),
             ), debug
         if cached:
             return cached, self._build_data_status(
@@ -554,6 +626,8 @@ class StockDataService:
                 updated_at=last_synced_at or cached[0].updated_at,
                 cache_hit=True,
                 error_message=error_message or "No upstream event rows returned.",
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata(cached[0].source, attempted_sources=[item.source for item in debug]),
             ), debug
         if error_message:
             return [], self._build_data_status(
@@ -561,8 +635,17 @@ class StockDataService:
                 updated_at=last_synced_at,
                 error_message=error_message,
                 failed=True,
+                sync_state=sync_state,
+                source_metadata=self._build_source_metadata("cninfo", attempted_sources=[item.source for item in debug]),
             ), debug
-        return [], self._build_data_status(source=None, updated_at=None, cache_hit=False, missing=True), debug
+        return [], self._build_data_status(
+            source=None,
+            updated_at=None,
+            cache_hit=False,
+            missing=True,
+            sync_state=sync_state,
+            source_metadata=self._build_source_metadata(None, attempted_sources=[item.source for item in debug]),
+        ), debug
 
     def _should_refresh(self, dataset: str, ticker: str, force_refresh: bool) -> bool:
         if force_refresh:
@@ -630,6 +713,8 @@ class StockDataService:
         error_message: str | None = None,
         missing: bool = False,
         failed: bool = False,
+        sync_state: dict | None = None,
+        source_metadata: SourceMetadata | None = None,
     ) -> DataStatus:
         if failed:
             status = "failed"
@@ -639,6 +724,8 @@ class StockDataService:
             status = "stale"
         else:
             status = "fresh"
+        if source_metadata is None:
+            source_metadata = self._build_source_metadata(source, attempted_sources=[source] if source else [])
         return DataStatus(
             status=status,
             updated_at=updated_at,
@@ -646,6 +733,10 @@ class StockDataService:
             ttl_hours=settings.stock_data_ttl_hours,
             cache_hit=cache_hit,
             error_message=error_message,
+            last_synced_at=self._sync_state_value(sync_state, "last_synced_at"),
+            last_success_at=self._sync_state_value(sync_state, "last_success_at"),
+            last_error_at=self._sync_state_value(sync_state, "last_error_at"),
+            source_metadata=source_metadata,
         )
 
     def _build_risk_flags_status(
@@ -671,6 +762,48 @@ class StockDataService:
             ttl_hours=settings.stock_data_ttl_hours,
             cache_hit=True,
             error_message=None,
+            last_synced_at=max(updated_candidates) if updated_candidates else None,
+            last_success_at=max(updated_candidates) if updated_candidates else None,
+            last_error_at=None,
+            source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"]),
+        )
+
+    def _get_sync_state(self, dataset: str, ticker: str) -> dict | None:
+        get_sync_state = getattr(self.repository, "get_sync_state", None)
+        if callable(get_sync_state):
+            return get_sync_state(dataset, ticker)
+        last_synced_at = self.repository.get_last_synced_at(dataset, ticker)
+        if not last_synced_at:
+            return None
+        return {
+            "last_synced_at": last_synced_at,
+            "last_success_at": last_synced_at,
+            "last_error_at": None,
+            "last_error_message": None,
+        }
+
+    def _sync_state_value(self, sync_state: dict | None, key: str) -> str | None:
+        if not sync_state:
+            return None
+        value = sync_state.get(key)
+        return str(value) if value is not None else None
+
+    def _build_source_metadata(
+        self,
+        selected_source: str | None,
+        *,
+        attempted_sources: list[str] | None = None,
+        fallback_used: bool = False,
+    ) -> SourceMetadata:
+        sources = []
+        for source_name in attempted_sources or []:
+            if source_name and source_name not in sources:
+                sources.append(source_name)
+        return SourceMetadata(
+            selected_source=selected_source,
+            selected_source_priority=get_source_priority(selected_source) if selected_source else None,
+            fallback_used=fallback_used,
+            attempted_sources=sources,
         )
 
     def _dedupe_events(self, events: list[Event], limit: int) -> list[Event]:
