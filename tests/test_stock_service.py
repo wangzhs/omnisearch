@@ -669,7 +669,11 @@ def test_overview_debug_preserves_section_structure_and_rollup_status() -> None:
     assert payload.debug.endpoint == "company_overview"
     assert set(payload.debug.sections) == {"company", "latest_financial", "latest_price", "recent_events", "risk_flags", "signals"}
     assert payload.data_status.status == "partial"
+    assert payload.data_status.source_metadata.selected_source == "derived"
+    assert payload.data_status.source_metadata.returned_sources == ["derived"]
     assert payload.debug.sections["latest_financial"].data_status.status == "partial"
+    assert payload.debug.sections["risk_flags"].data_status.source_metadata.returned_sources == ["derived"]
+    assert payload.debug.sections["signals"].data_status.source_metadata.returned_sources == ["derived"]
 
 
 def test_risk_flag_status_propagates_partial_inputs() -> None:
@@ -682,6 +686,10 @@ def test_risk_flag_status_propagates_partial_inputs() -> None:
     )
 
     assert risk_status.status == "partial"
+    assert risk_status.error_message == "partial upstream"
+    assert risk_status.source_metadata.selected_source == "derived"
+    assert risk_status.source_metadata.returned_sources == ["derived"]
+    assert risk_status.source_metadata.selection_reason == "overview_rollup"
 
 
 def test_runtime_sync_recording_covers_all_primary_datasets() -> None:

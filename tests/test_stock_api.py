@@ -518,8 +518,11 @@ def test_company_overview_debug_is_main_observability_entrypoint(monkeypatch) ->
     assert payload["debug"]["endpoint"] == "company_overview"
     assert set(payload["debug"]["sections"]) == {"company", "latest_financial", "latest_price", "recent_events", "risk_flags", "signals"}
     assert payload["data_status"]["status"] == payload["debug"]["sections"]["risk_flags"]["data_status"]["status"]
+    assert payload["data_status"]["source_metadata"]["returned_sources"] == ["derived"]
     assert payload["debug"]["sections"]["latest_price"]["data_status"]["source"] == "akshare"
     assert payload["debug"]["sections"]["recent_events"]["sources"][0]["source"] == "cninfo"
+    assert payload["debug"]["sections"]["risk_flags"]["data_status"]["source_metadata"]["returned_sources"] == ["derived"]
+    assert payload["debug"]["sections"]["signals"]["data_status"]["source_metadata"]["returned_sources"] == ["derived"]
 
 
 def test_company_overview_debug_rolls_up_stale_and_failed_section_states(monkeypatch) -> None:

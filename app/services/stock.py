@@ -1037,6 +1037,14 @@ class StockDataService:
         risk_status: DataStatus,
     ) -> DataStatus:
         statuses = [company_status, financial_status, price_status, event_status, risk_status]
+        return self._build_derived_rollup_status(statuses, selection_reason="overview_rollup")
+
+    def _build_derived_rollup_status(
+        self,
+        statuses: list[DataStatus],
+        *,
+        selection_reason: str,
+    ) -> DataStatus:
         if any(item.status == "failed" for item in statuses):
             selected = next(item for item in statuses if item.status == "failed")
             return self._build_data_status(
@@ -1045,7 +1053,7 @@ class StockDataService:
                 cache_hit=True,
                 error_message=selected.error_message or selected.last_error_message,
                 failed=True,
-                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason=selection_reason),
             )
         if any(item.status == "stale" for item in statuses):
             selected = next(item for item in statuses if item.status == "stale")
@@ -1053,9 +1061,9 @@ class StockDataService:
                 source="derived",
                 updated_at=selected.updated_at,
                 cache_hit=True,
-                error_message=selected.error_message,
+                error_message=selected.error_message or selected.last_error_message,
                 partial=any(item.status == "partial" for item in statuses),
-                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason=selection_reason),
             )
         if any(item.status == "partial" for item in statuses):
             selected = next(item for item in statuses if item.status == "partial")
@@ -1065,7 +1073,7 @@ class StockDataService:
                 cache_hit=True,
                 error_message=selected.error_message or selected.last_error_message,
                 partial=True,
-                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason=selection_reason),
             )
         if all(item.status == "missing" for item in statuses):
             return self._build_data_status(
@@ -1073,14 +1081,14 @@ class StockDataService:
                 updated_at=None,
                 cache_hit=True,
                 missing=True,
-                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason=selection_reason),
             )
         latest_updated_at = max((item.updated_at for item in statuses if item.updated_at), default=None)
         return self._build_data_status(
             source="derived",
             updated_at=latest_updated_at,
             cache_hit=True,
-            source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+            source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason=selection_reason),
         )
 
     def _build_risk_flags_status(
@@ -1089,30 +1097,9 @@ class StockDataService:
         price_status: DataStatus,
         event_status: DataStatus,
     ) -> DataStatus:
-        component_statuses = [financial_status.status, price_status.status, event_status.status]
-        updated_candidates = [status.updated_at for status in (financial_status, price_status, event_status) if status.updated_at]
-        if all(status == "missing" for status in component_statuses):
-            status = "missing"
-        elif "failed" in component_statuses:
-            status = "failed"
-        elif "stale" in component_statuses:
-            status = "stale"
-        elif "partial" in component_statuses:
-            status = "partial"
-        else:
-            status = "fresh"
-        return DataStatus(
-            status=status,
-            updated_at=max(updated_candidates) if updated_candidates else None,
-            source="derived",
-            ttl_hours=settings.stock_data_ttl_hours,
-            cache_hit=True,
-            error_message=None,
-            last_synced_at=max(updated_candidates) if updated_candidates else None,
-            last_success_at=max(updated_candidates) if updated_candidates else None,
-            last_error_at=None,
-            last_error_message=None,
-            source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"]),
+        return self._build_derived_rollup_status(
+            [financial_status, price_status, event_status],
+            selection_reason="overview_rollup",
         )
 
     def _record_dataset_sync(
