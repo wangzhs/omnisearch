@@ -154,6 +154,22 @@ def _dump_debug(value: Any) -> Any:
     return value
 
 
+def _status_value(value: Any) -> str | None:
+    return getattr(value, "status", None)
+
+
+def _overview_has_partial_sections(overview: Any) -> bool:
+    sections = (
+        overview.company,
+        overview.latest_financial,
+        overview.latest_price,
+        overview.recent_events,
+        overview.risk_flags,
+        overview.signals,
+    )
+    return any(_status_value(section.data_status) == "partial" for section in sections)
+
+
 def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: list[str]) -> dict[str, Any]:
     ticker = normalize_ticker_input(ticker)
     result: dict[str, Any] = {
@@ -163,6 +179,7 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
         "summary": {
             "planned_dataset_count": len(datasets),
             "ok_dataset_count": 0,
+            "partial_dataset_count": 0,
             "failed_dataset_count": 0,
             "skipped_dataset_count": 0,
         },
@@ -174,6 +191,8 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
         result["datasets"].append({"dataset": dataset, "status": status, **extra})
         if status == "ok":
             result["summary"]["ok_dataset_count"] += 1
+        elif status == "partial":
+            result["summary"]["partial_dataset_count"] += 1
         elif status == "failed":
             result["summary"]["failed_dataset_count"] += 1
         elif status == "skipped":
@@ -261,7 +280,7 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                 )
                 result["price_count"] = len(prices_debug.items)
                 result["price_debug"] = _dump_debug(prices_debug.debug)
-                record_dataset("prices", "ok", count=len(prices_debug.items))
+                record_dataset("prices", "partial" if prices_debug.data_status.status == "partial" else "ok", count=len(prices_debug.items))
                 _record_sync_result(
                     service,
                     "prices",
@@ -295,7 +314,7 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                 )
                 result["event_count"] = len(events_debug.items)
                 result["event_debug"] = _dump_debug(events_debug.debug)
-                record_dataset("events", "ok", count=len(events_debug.items))
+                record_dataset("events", "partial" if events_debug.data_status.status == "partial" else "ok", count=len(events_debug.items))
                 _record_sync_result(
                     service,
                     "events",
@@ -341,7 +360,7 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                         "signals": overview.signals.data_status.model_dump(),
                     },
                 }
-                record_dataset("overview", "ok")
+                record_dataset("overview", "partial" if _overview_has_partial_sections(overview) else "ok")
                 _record_sync_result(
                     service,
                     "overview",
@@ -367,6 +386,8 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
     if errors:
         result["status"] = "partial"
         result.update(errors)
+    elif result["summary"]["partial_dataset_count"] > 0:
+        result["status"] = "partial"
     return result
 
 

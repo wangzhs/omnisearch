@@ -389,3 +389,85 @@ def test_sync_stock_script_preserves_partial_sync_observability(monkeypatch, cap
     assert price_record["error_message"] == "tushare timeout"
     assert event_record["success"] is True
     assert event_record["error_message"] == "cninfo timeout"
+
+
+def test_sync_stock_script_reports_mixed_outcomes_stably(monkeypatch, capsys) -> None:
+    class FakeRepository:
+        def get_last_synced_at(self, dataset: str, ticker: str):
+            if dataset == "company_profile":
+                return "2099-03-17T00:00:00Z"
+            return None
+
+    class FakeService:
+        repository = FakeRepository()
+
+        def list_financials(self, ticker: str, limit: int = 4, refresh: bool = False):
+            raise RuntimeError("financial source down")
+
+        def list_prices_with_debug(self, ticker: str, limit: int = 60, refresh: bool = False):
+            return type(
+                "PriceDebug",
+                (),
+                {
+                    "items": [1],
+                    "data_status": type("Status", (), {"status": "partial", "last_error_message": "tushare timeout", "error_message": "tushare timeout"})(),
+                    "debug": [],
+                },
+            )()
+
+        def list_events_with_debug(self, ticker: str, limit: int = 10, refresh: bool = False):
+            return type(
+                "EventDebug",
+                (),
+                {
+                    "items": [1, 2],
+                    "data_status": type("Status", (), {"status": "fresh", "last_error_message": None, "error_message": None})(),
+                    "debug": [],
+                },
+            )()
+
+        def get_overview(self, ticker: str, refresh: bool = False):
+            return type(
+                "Overview",
+                (),
+                {
+                    "company": type("Section", (), {"data": None, "data_status": type("Status", (), {"status": "fresh", "model_dump": lambda self: {"status": "fresh"}})()})(),
+                    "latest_financial": type("Section", (), {"data": None, "data_status": type("Status", (), {"status": "partial", "model_dump": lambda self: {"status": "partial"}})()})(),
+                    "latest_price": type("Section", (), {"data": None, "data_status": type("Status", (), {"status": "partial", "model_dump": lambda self: {"status": "partial"}})()})(),
+                    "recent_events": type("Section", (), {"data_status": type("Status", (), {"status": "fresh", "model_dump": lambda self: {"status": "fresh"}})()})(),
+                    "risk_flags": type("Section", (), {"data": [1], "data_status": type("Status", (), {"status": "partial", "model_dump": lambda self: {"status": "partial"}})()})(),
+                    "signals": type("Section", (), {"data": [], "data_status": type("Status", (), {"status": "partial", "model_dump": lambda self: {"status": "partial"}})()})(),
+                },
+            )()
+
+    monkeypatch.setattr("app.scripts.sync_stock.get_stock_data_service", lambda: FakeService())
+    monkeypatch.setattr(
+        "sys.argv",
+        ["sync_stock.py", "--tickers", "000001", "--incremental", "--skip-company"],
+    )
+
+    sync_stock.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    result = payload["results"][0]
+    dataset_status = {item["dataset"]: item["status"] for item in result["datasets"]}
+
+    assert result["status"] == "partial"
+    assert result["summary"]["planned_dataset_count"] == 4
+    assert result["summary"]["ok_dataset_count"] == 1
+    assert result["summary"]["partial_dataset_count"] == 2
+    assert result["summary"]["failed_dataset_count"] == 1
+    assert result["summary"]["skipped_dataset_count"] == 0
+    assert dataset_status == {
+        "financials": "failed",
+        "prices": "partial",
+        "events": "ok",
+        "overview": "partial",
+    }
+    assert result["overview"]["section_status"]["latest_financial"]["status"] == "partial"
+    assert result["overview"]["section_status"]["signals"]["status"] == "partial"
+    assert payload["summary"]["ticker_count"] == 1
+    assert payload["summary"]["partial_ticker_count"] == 1
+    assert payload["summary"]["ok_ticker_count"] == 0
+    assert payload["failure_count"] == 1
+    assert payload["failures"][0]["errors"]["financial_error"] == "financial source down"
