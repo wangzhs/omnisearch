@@ -165,6 +165,7 @@ class StockDataService:
             price_status=price_status,
             event_status=event_status,
         )
+        signals_status = self._build_signals_status(risk_status=risk_status)
         signals = self._build_overview_signals(
             latest_financial=latest_financial,
             latest_price=latest_price,
@@ -188,7 +189,7 @@ class StockDataService:
             latest_price=CompanyOverviewPriceSection(data=latest_price, data_status=price_status),
             recent_events=CompanyOverviewEventsSection(data=events, data_status=event_status),
             risk_flags=CompanyOverviewRiskFlagsSection(data=risk_flags, data_status=risk_status),
-            signals=CompanyOverviewSignalsSection(data=signals, data_status=risk_status),
+            signals=CompanyOverviewSignalsSection(data=signals, data_status=signals_status),
         )
         return OverviewDebugResponse(
             ticker=normalized,
@@ -203,7 +204,7 @@ class StockDataService:
                     "latest_price": self._build_section_debug(price_status, price_debug),
                     "recent_events": self._build_section_debug(event_status, event_debug),
                     "risk_flags": self._build_section_debug(risk_status, self._build_data_status_sources_debug(risk_status, item_count=len(risk_flags))),
-                    "signals": self._build_section_debug(risk_status, self._build_data_status_sources_debug(risk_status, item_count=len(signals))),
+                    "signals": self._build_section_debug(signals_status, self._build_data_status_sources_debug(signals_status, item_count=len(signals))),
                 },
             ),
         )
@@ -1099,7 +1100,13 @@ class StockDataService:
     ) -> DataStatus:
         return self._build_derived_rollup_status(
             [financial_status, price_status, event_status],
-            selection_reason="overview_rollup",
+            selection_reason="risk_flags_rollup",
+        )
+
+    def _build_signals_status(self, *, risk_status: DataStatus) -> DataStatus:
+        return self._build_derived_rollup_status(
+            [risk_status],
+            selection_reason="signals_rollup",
         )
 
     def _record_dataset_sync(

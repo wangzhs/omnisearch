@@ -21,51 +21,51 @@ Constraints:
 
 ## Current Task
 
-Refine derived status `selection_reason` semantics with minimal necessary changes.
+Harden health endpoint observability shape consistency with minimal necessary changes.
 
 ### Scope
 
-1. Tighten derived helper `selection_reason` semantics
-- Review the derived status helpers in `StockDataService`.
-- Replace overly broad or misleading `selection_reason` values with narrower helper-specific values where appropriate.
+1. Tighten `/health/sources` and `/health/sync` top-level shape consistency
+- Review the top-level payload shape of both health endpoints.
+- Prefer small, backward-compatible changes that make their observability structure easier to consume together.
 - Cover at least:
-  - overview-level derived status metadata
-  - `risk_flags` derived status metadata
-  - `signals` or other derived sections that rely on the same helper path
+  - stable top-level `status`
+  - presence or absence of a top-level summary/metadata block
+  - source/configuration visibility staying explicit
 
-2. Tighten focused service/API coverage around derived metadata semantics
-- Add or refine tests that exercise helper output through:
-  - service-level overview assembly
-  - `GET /company/{ticker}/overview?debug=true`
-- Prefer tests that guard `selection_reason` correctness and metadata stability rather than broad snapshots.
+2. Tighten focused API coverage around health observability semantics
+- Add or refine tests for:
+  - `GET /health/sources`
+  - `GET /health/sync`
+- Prefer tests that protect shape consistency and backward compatibility over broad snapshots.
 
-3. Keep overview contract stable
-- Do not redesign overview response fields.
+3. Keep health contracts stable
+- Do not redesign existing health row fields.
 - Do not change endpoint paths.
-- Do not broaden debug payload shape unless fixing a narrow inconsistency.
-- Do not change status rollup semantics as part of this task.
+- Do not remove existing fields from `/health/sources` or `/health/sync`.
+- Add only narrow compatibility-safe structure if needed.
 
 4. Update docs only if contract meaning changes
-- If helper changes alter observable overview semantics, update `docs/stock-api.md`.
+- If the observable health payload meaning changes, update `docs/stock-api.md`.
 - Otherwise avoid doc churn.
 
 5. Keep scope narrow
 - Do not broaden generic web research features.
-- Focus on internal consistency hardening, not feature expansion.
+- Focus on health observability consistency, not feature expansion.
 
 ## Suggested Files
 
-- `app/services/stock.py`
+- `app/api/routes.py`
 - `app/schemas/stock.py`
-- `tests/test_stock_service.py`
 - `tests/test_stock_api.py`
+- `docs/stock-api.md`
 - `docs/codex-iteration-workflow.md`
 
 ## Acceptance Checklist
 
-- Derived `selection_reason` values are narrower and internally consistent.
-- Service/API coverage protects derived metadata semantics without changing status behavior.
-- Existing overview field names remain unchanged unless a bug fix requires a narrow correction.
+- Health endpoint top-level shapes are more internally consistent without breaking current fields.
+- API coverage protects health observability semantics and backward compatibility.
+- Existing health field names remain unchanged unless a bug fix requires a narrow correction.
 - Existing endpoint paths and response field names remain unchanged.
 - Tests were run.
 

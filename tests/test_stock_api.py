@@ -525,6 +525,57 @@ def test_company_overview_debug_is_main_observability_entrypoint(monkeypatch) ->
     assert payload["debug"]["sections"]["signals"]["data_status"]["source_metadata"]["returned_sources"] == ["derived"]
 
 
+def test_company_overview_debug_uses_helper_specific_selection_reasons(monkeypatch) -> None:
+    from app.services.stock import StockDataService
+
+    class DerivedMetadataService(StockDataService):
+        def __init__(self):
+            super().__init__(repository=type("Repo", (), {})())
+
+        def _load_company(self, ticker: str, refresh: bool = False):
+            return (
+                self._build_placeholder_company(ticker),
+                self._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+            )
+
+        def _load_financials(self, ticker: str, limit: int = 8, refresh: bool = False):
+            return (
+                [],
+                self._build_data_status(
+                    source="tushare",
+                    updated_at="2099-01-01T00:00:00Z",
+                    cache_hit=True,
+                    partial=True,
+                    error_message="financial retry pending",
+                ),
+            )
+
+        def _load_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None, refresh: bool = False):
+            return (
+                [],
+                self._build_data_status(source="akshare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+                [],
+            )
+
+        def _load_events(self, ticker: str, limit: int = 20, refresh: bool = False):
+            return (
+                [],
+                self._build_data_status(source="cninfo", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+                [],
+            )
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: DerivedMetadataService())
+
+    client = TestClient(app)
+    response = client.get("/company/000001/overview?debug=true")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_status"]["source_metadata"]["selection_reason"] == "overview_rollup"
+    assert payload["debug"]["sections"]["risk_flags"]["data_status"]["source_metadata"]["selection_reason"] == "risk_flags_rollup"
+    assert payload["debug"]["sections"]["signals"]["data_status"]["source_metadata"]["selection_reason"] == "signals_rollup"
+
+
 def test_company_overview_debug_rolls_up_stale_and_failed_section_states(monkeypatch) -> None:
     class BoundaryOverviewService(FakeStockService):
         def get_overview_with_debug(self, ticker: str, refresh: bool = False):
