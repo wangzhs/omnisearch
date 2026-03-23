@@ -336,6 +336,135 @@ def test_event_dedupe_sorts_same_date_items_deterministically() -> None:
     assert [item.event_id for item in ordered] == ["evt-z", "evt-a", "evt-b"]
 
 
+def test_event_dedupe_collapses_same_source_records_with_empty_titles_by_url() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+    first = Event(
+        event_id="evt-b",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "", "2026-03-16", "https://example.com/a.pdf"),
+        ticker="000001.SZ",
+        event_date="2026-03-16",
+        title="",
+        raw_title="",
+        event_type="general_disclosure",
+        sentiment="neutral",
+        source_type="filing",
+        source="cninfo",
+        source_priority=100,
+        url="https://example.com/a.pdf",
+        source_url="https://example.com/a.pdf",
+        importance="medium",
+        updated_at="2026-03-16T09:00:00Z",
+    )
+    second = Event(
+        event_id="evt-a",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "【】", "2026-03-16", "https://example.com/a.pdf"),
+        ticker="000001.SZ",
+        event_date="2026-03-16",
+        title="【】",
+        raw_title="【】",
+        event_type="general_disclosure",
+        sentiment="neutral",
+        source_type="filing",
+        source="cninfo",
+        source_priority=100,
+        url="https://example.com/a.pdf",
+        source_url="https://example.com/a.pdf",
+        importance="medium",
+        updated_at="2026-03-16T09:00:00Z",
+    )
+
+    deduped = service._dedupe_events([first, second], limit=10)
+
+    assert len(deduped) == 1
+    assert deduped[0].event_id == "evt-a"
+
+
+def test_event_dedupe_does_not_over_merge_cross_source_url_only_records() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+    first = Event(
+        event_id="evt-1",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "", None, "https://example.com/a.pdf"),
+        ticker="000001.SZ",
+        event_date=None,
+        title="",
+        raw_title="",
+        event_type="general_disclosure",
+        sentiment="neutral",
+        source_type="filing",
+        source="cninfo",
+        source_priority=100,
+        url="https://example.com/a.pdf",
+        source_url="https://example.com/a.pdf",
+        importance="medium",
+        updated_at="2026-03-16T09:00:00Z",
+    )
+    second = Event(
+        event_id="evt-2",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "", None, "https://example.com/b.pdf"),
+        ticker="000001.SZ",
+        event_date=None,
+        title="",
+        raw_title="",
+        event_type="general_disclosure",
+        sentiment="neutral",
+        source_type="exchange_search",
+        source="exchange_search",
+        source_priority=60,
+        url="https://example.com/b.pdf",
+        source_url="https://example.com/b.pdf",
+        importance="medium",
+        updated_at="2026-03-16T09:00:00Z",
+    )
+
+    deduped = service._dedupe_events([first, second], limit=10)
+
+    assert len(deduped) == 2
+    assert [item.event_id for item in deduped] == ["evt-1", "evt-2"]
+
+
+def test_event_dedupe_with_missing_date_remains_stable_for_identical_url_fallback_records() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+    higher_priority = Event(
+        event_id="evt-high",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "", None, "https://example.com/a.pdf"),
+        ticker="000001.SZ",
+        event_date=None,
+        title="",
+        raw_title="",
+        event_type="general_disclosure",
+        sentiment="neutral",
+        source_type="filing",
+        source="cninfo",
+        source_priority=100,
+        url="https://example.com/a.pdf",
+        source_url="https://example.com/a.pdf",
+        importance="medium",
+        updated_at="2026-03-16T09:00:00Z",
+    )
+    lower_priority = Event(
+        event_id="evt-low",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "【】", None, "https://example.com/a.pdf"),
+        ticker="000001.SZ",
+        event_date=None,
+        title="【】",
+        raw_title="【】",
+        event_type="general_disclosure",
+        sentiment="neutral",
+        source_type="exchange_search",
+        source="exchange_search",
+        source_priority=60,
+        url="https://example.com/a.pdf",
+        source_url="https://example.com/a.pdf",
+        importance="medium",
+        updated_at="2026-03-16T09:00:00Z",
+    )
+
+    deduped = service._dedupe_events([lower_priority, higher_priority], limit=10)
+
+    assert len(deduped) == 1
+    assert deduped[0].event_id == "evt-high"
+
+
 def test_build_overview_signals_returns_agent_ready_summary() -> None:
     service = StockDataService(repository=type("Repo", (), {})())
 

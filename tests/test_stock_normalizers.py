@@ -74,6 +74,24 @@ def test_event_title_normalization_stays_conservative_for_unrelated_titles() -> 
     )
 
 
+def test_event_dedupe_key_falls_back_to_url_for_empty_or_punctuation_only_titles() -> None:
+    empty_title_key = build_event_dedupe_key("000001.SZ", "", "2026-03-16", "https://example.com/a.pdf")
+    punctuation_title_key = build_event_dedupe_key("000001.SZ", "【】()", "2026-03-16", "https://example.com/a.pdf")
+    different_url_key = build_event_dedupe_key("000001.SZ", "", "2026-03-16", "https://example.com/b.pdf")
+
+    assert empty_title_key == punctuation_title_key
+    assert empty_title_key != different_url_key
+
+
+def test_event_dedupe_key_stays_stable_when_event_date_is_missing_but_source_record_matches() -> None:
+    key1 = build_event_dedupe_key("000001.SZ", "", None, "https://example.com/a.pdf")
+    key2 = build_event_dedupe_key("000001.SZ", "   ", None, "https://example.com/a.pdf")
+    key3 = build_event_dedupe_key("000001.SZ", "", None, "https://example.com/b.pdf")
+
+    assert key1 == key2
+    assert key1 != key3
+
+
 def test_event_taxonomy_covers_general_and_regulatory_cases() -> None:
     assert normalize_event_type("收到监管函") == "regulatory_action"
     assert normalize_event_type("关于召开股东大会的公告") == "general_disclosure"
