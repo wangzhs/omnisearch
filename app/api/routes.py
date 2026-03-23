@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import settings
 from app.extractors.content import extract_content
-from app.normalizers.stock import extract_candidate_ticker
+from app.normalizers.stock import extract_candidate_ticker, normalize_ticker_input
 from app.providers.searxng import search_web
 from app.research.planners.factory import get_research_planner
 from app.schemas.extract import ExtractRequest, ExtractResponse
@@ -58,10 +58,11 @@ def health_sources() -> dict:
 @router.get("/health/sync")
 def health_sync(ticker: str | None = None) -> dict:
     service = get_stock_data_service()
+    normalized_ticker = normalize_ticker_input(ticker) if ticker else None
     return {
         "status": "ok",
-        "ticker": ticker,
-        "items": service.repository.list_sync_state(ticker=ticker),
+        "ticker": normalized_ticker,
+        "items": service.repository.list_sync_state(ticker=normalized_ticker),
     }
 
 

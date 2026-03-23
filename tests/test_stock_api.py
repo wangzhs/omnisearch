@@ -1192,3 +1192,52 @@ def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
     assert payload["items"][0]["last_error_message"] == "upstream timeout"
     assert payload["items"][0]["records_written"] == 1
     assert payload["items"][0]["duration_ms"] == 120
+
+
+def test_health_sync_normalizes_ticker_filter(monkeypatch) -> None:
+    calls = []
+
+    class FakeRepository:
+        def list_sync_state(self, ticker: str | None = None):
+            calls.append(ticker)
+            return [{"dataset": "company_profile", "ticker": ticker, "status": "ok"}]
+
+    class HealthStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthStockService())
+    client = TestClient(app)
+
+    response = client.get("/health/sync?ticker=000001")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert calls == ["000001.SZ"]
+    assert payload["ticker"] == "000001.SZ"
+    assert payload["items"][0]["ticker"] == "000001.SZ"
+
+
+def test_health_sync_without_ticker_returns_all_rows(monkeypatch) -> None:
+    calls = []
+
+    class FakeRepository:
+        def list_sync_state(self, ticker: str | None = None):
+            calls.append(ticker)
+            return [
+                {"dataset": "company_profile", "ticker": "000001.SZ", "status": "ok"},
+                {"dataset": "company_profile", "ticker": "600519.SH", "status": "ok"},
+            ]
+
+    class HealthStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthStockService())
+    client = TestClient(app)
+
+    response = client.get("/health/sync")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert calls == [None]
+    assert payload["ticker"] is None
+    assert len(payload["items"]) == 2

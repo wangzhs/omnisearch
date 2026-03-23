@@ -1,4 +1,4 @@
-from app.models.stock import Event
+from app.models.stock import CompanyProfile, Event
 from app.models.stock import FinancialSummary, PriceDaily
 from app.services.stock import StockDataService
 
@@ -261,6 +261,95 @@ def test_risk_flags_capture_drawdown_and_volatility() -> None:
 
     assert "price_volatility" in codes
     assert "recent_drawdown" in codes
+
+
+def test_overview_does_not_reload_sections_for_risk_flags() -> None:
+    class CountingService(StockDataService):
+        def __init__(self):
+            super().__init__(repository=type("Repo", (), {})())
+            self.calls = {"company": 0, "financials": 0, "prices": 0, "events": 0, "overview_status": 0}
+
+        def _load_company(self, ticker: str, refresh: bool = False):
+            self.calls["company"] += 1
+            return (
+                CompanyProfile(ticker=ticker, dedupe_key=ticker, source="tushare", source_priority=100),
+                self._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+            )
+
+        def _load_financials(self, ticker: str, limit: int = 8, refresh: bool = False):
+            self.calls["financials"] += 1
+            return (
+                [FinancialSummary(record_id=f"{ticker}:2025-12-31:annual", dedupe_key=f"{ticker}:2025-12-31:annual", ticker=ticker, report_date="2025-12-31", net_profit=-1.0, source="tushare")],
+                self._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+            )
+
+        def _load_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None, refresh: bool = False):
+            self.calls["prices"] += 1
+            return (
+                [PriceDaily(ticker=ticker, trade_date="2026-03-17", dedupe_key=f"{ticker}:2026-03-17", close=10.0, change_pct=5.0, source="akshare")],
+                self._build_data_status(source="akshare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+                [],
+            )
+
+        def _load_events(self, ticker: str, limit: int = 20, refresh: bool = False):
+            self.calls["events"] += 1
+            return (
+                [Event(event_id="evt-1", dedupe_key="evt-1", ticker=ticker, event_date="2026-03-16", title="风险提示公告", raw_title="风险提示公告", event_type="general_disclosure", sentiment="negative", source_type="filing", source="cninfo", importance="high")],
+                self._build_data_status(source="cninfo", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+                [],
+            )
+
+        def _build_overview_status(self, **kwargs):
+            self.calls["overview_status"] += 1
+            return super()._build_overview_status(**kwargs)
+
+    service = CountingService()
+
+    payload = service.get_overview_with_debug("000001.SZ")
+
+    assert payload.data.risk_flags.data
+    assert payload.debug.sections["risk_flags"].data_status.status == "fresh"
+    assert service.calls["company"] == 1
+    assert service.calls["financials"] == 1
+    assert service.calls["prices"] == 1
+    assert service.calls["events"] == 1
+    assert service.calls["overview_status"] == 1
+
+
+def test_overview_debug_preserves_section_structure_and_rollup_status() -> None:
+    class PartialOverviewService(StockDataService):
+        def _load_company(self, ticker: str, refresh: bool = False):
+            return (
+                CompanyProfile(ticker=ticker, dedupe_key=ticker, source="tushare", source_priority=100),
+                self._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+            )
+
+        def _load_financials(self, ticker: str, limit: int = 8, refresh: bool = False):
+            return (
+                [],
+                self._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True, partial=True, error_message="partial"),
+            )
+
+        def _load_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None, refresh: bool = False):
+            return (
+                [],
+                self._build_data_status(source="akshare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+                [],
+            )
+
+        def _load_events(self, ticker: str, limit: int = 20, refresh: bool = False):
+            return (
+                [],
+                self._build_data_status(source="cninfo", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+                [],
+            )
+
+    payload = PartialOverviewService(repository=type("Repo", (), {})()).get_overview_with_debug("000001.SZ")
+
+    assert payload.debug.endpoint == "company_overview"
+    assert set(payload.debug.sections) == {"company", "latest_financial", "latest_price", "recent_events", "risk_flags", "signals"}
+    assert payload.data_status.status == "partial"
+    assert payload.debug.sections["latest_financial"].data_status.status == "partial"
 
 
 def test_risk_flag_status_propagates_partial_inputs() -> None:

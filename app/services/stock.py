@@ -159,7 +159,7 @@ class StockDataService:
         events, event_status, event_debug = self._load_events(normalized, limit=5, refresh=refresh)
         latest_financial = financials[0] if financials else None
         latest_price = prices[-1] if prices else None
-        risk_flags = self.get_risk_flags(ticker, refresh=refresh)
+        risk_flags = self._build_risk_flags(financials=financials, prices=prices, events=events)
         risk_status = self._build_risk_flags_status(
             financial_status=financial_status,
             price_status=price_status,
@@ -170,6 +170,13 @@ class StockDataService:
             latest_price=latest_price,
             recent_events=events,
             risk_flags=risk_flags,
+        )
+        overview_status = self._build_overview_status(
+            company_status=company_status,
+            financial_status=financial_status,
+            price_status=price_status,
+            event_status=event_status,
+            risk_status=risk_status,
         )
         overview = CompanyOverview(
             ticker=normalized,
@@ -186,22 +193,10 @@ class StockDataService:
         return OverviewDebugResponse(
             ticker=normalized,
             data=overview,
-            data_status=self._build_overview_status(
-                company_status=company_status,
-                financial_status=financial_status,
-                price_status=price_status,
-                event_status=event_status,
-                risk_status=risk_status,
-            ),
+            data_status=overview_status,
             debug=self._build_endpoint_debug(
                 endpoint="company_overview",
-                data_status=self._build_overview_status(
-                    company_status=company_status,
-                    financial_status=financial_status,
-                    price_status=price_status,
-                    event_status=event_status,
-                    risk_status=risk_status,
-                ),
+                data_status=overview_status,
                 sections={
                     "company": self._build_section_debug(company_status, self._build_data_status_sources_debug(company_status, item_count=1 if company else 0)),
                     "latest_financial": self._build_section_debug(financial_status, self._build_data_status_sources_debug(financial_status, item_count=1 if latest_financial else 0)),
@@ -266,6 +261,15 @@ class StockDataService:
         financials = self.list_financials(ticker, limit=4, refresh=refresh)
         prices = self.list_prices(ticker, limit=30, refresh=refresh)
         events = self.list_events(ticker, limit=10, refresh=refresh)
+        return self._build_risk_flags(financials=financials, prices=prices, events=events)
+
+    def _build_risk_flags(
+        self,
+        *,
+        financials: list[FinancialSummary],
+        prices: list[PriceDaily],
+        events: list[Event],
+    ) -> list[RiskFlag]:
         flags: list[RiskFlag] = []
 
         latest_financial = financials[0] if financials else None
