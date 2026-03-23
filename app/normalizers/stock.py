@@ -129,6 +129,8 @@ def normalize_event_title_for_dedupe(title: str) -> str:
     normalized = (title or "").strip().lower()
     normalized = re.sub(r"\s+", "", normalized)
     normalized = re.sub(r"[《》【】\[\]()（）:：,，.。;；!！?？\"'`·\-_/\\\\]+", "", normalized)
+    normalized = re.sub(r"^(提示性)?公告(?=关于)", "", normalized)
+    normalized = re.sub(r"^(临时)?公告(?=关于)", "", normalized)
     return normalized
 
 

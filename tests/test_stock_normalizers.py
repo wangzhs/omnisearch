@@ -51,6 +51,29 @@ def test_event_dedupe_key_normalizes_title_variants() -> None:
     assert normalize_event_title_for_dedupe("关于 2026 年报的公告") == normalize_event_title_for_dedupe("关于2026年报的公告")
 
 
+def test_event_title_normalization_collapses_punctuation_and_prefix_noise() -> None:
+    normalized_plain = normalize_event_title_for_dedupe("关于2026年报的公告")
+    normalized_spaced = normalize_event_title_for_dedupe("关于 2026 年报 的 公告")
+    normalized_prefixed = normalize_event_title_for_dedupe("【公告】关于2026年报的公告")
+    normalized_notice = normalize_event_title_for_dedupe("提示性公告：关于2026年报的公告")
+
+    assert normalized_plain == normalized_spaced
+    assert normalized_plain == normalized_prefixed
+    assert normalized_plain == normalized_notice
+
+
+def test_event_title_normalization_stays_conservative_for_unrelated_titles() -> None:
+    annual_report = normalize_event_title_for_dedupe("关于2026年报的公告")
+    shareholder_change = normalize_event_title_for_dedupe("关于股东减持计划的公告")
+
+    assert annual_report != shareholder_change
+    assert build_event_dedupe_key("000001.SZ", "关于2026年报的公告", "2026-03-16") != build_event_dedupe_key(
+        "000001.SZ",
+        "关于股东减持计划的公告",
+        "2026-03-16",
+    )
+
+
 def test_event_taxonomy_covers_general_and_regulatory_cases() -> None:
     assert normalize_event_type("收到监管函") == "regulatory_action"
     assert normalize_event_type("关于召开股东大会的公告") == "general_disclosure"

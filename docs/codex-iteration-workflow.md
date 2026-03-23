@@ -21,24 +21,24 @@ Constraints:
 
 ## Current Task
 
-Harden stock event normalization boundary coverage with minimal necessary changes.
+Harden stock event dedupe fallback behavior with minimal necessary changes.
 
 ### Scope
 
-1. Tighten event title normalization coverage
-- Add focused tests for title normalization behavior that directly affects event dedupe.
+1. Tighten dedupe fallback coverage for incomplete source data
+- Add focused tests for cases where event inputs are incomplete but still need deterministic dedupe behavior.
 - Cover at least:
-  - punctuation and whitespace variants collapsing to the same normalized title
-  - bracket/prefix noise not causing duplicate events across sources
-  - normalization staying conservative enough to avoid obviously unrelated titles merging
+  - empty or punctuation-only titles falling back to URL-sensitive dedupe behavior
+  - missing `event_date` still producing stable keys for obviously identical source records
+  - dedupe not over-merging unrelated URL-only records
 - Prefer unit-level tests in `tests/test_stock_normalizers.py`.
 
-2. Tighten event dedupe boundary checks
-- Add or tighten tests around event dedupe decisions in service/repository paths.
+2. Tighten service-level dedupe boundary checks
+- Add or tighten tests around dedupe decisions when normalized titles are empty or event dates are missing.
 - Cover at least:
-  - same-day same-title cross-source events merging predictably
-  - higher-priority source still winning after normalization
-  - ordering staying deterministic after dedupe
+  - same-source duplicate records with incomplete titles collapsing predictably
+  - cross-source incomplete records not over-merging unless the remaining signals really match
+  - deterministic ordering remaining intact after fallback dedupe
 
 3. Keep event contract stable
 - Do not redesign event response fields or event type taxonomy.
@@ -59,8 +59,8 @@ Harden stock event normalization boundary coverage with minimal necessary change
 
 ## Acceptance Checklist
 
-- Event normalization tests cover title/dedupe boundary cases.
-- Event dedupe remains deterministic and source-priority aware after normalization.
+- Event normalization tests cover incomplete-input and fallback-dedupe boundary cases.
+- Event dedupe remains deterministic and source-priority aware when titles or dates are incomplete.
 - Snapshots change only if the event contract intentionally changed.
 - Existing event field names remain unchanged unless a bug fix requires a narrow correction.
 - Existing endpoint paths and response field names remain unchanged.

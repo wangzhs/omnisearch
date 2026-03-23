@@ -243,6 +243,44 @@ def test_event_dedupe_collapses_cross_source_same_day_title_variants() -> None:
     assert deduped[0].title == "关于 2026 年报的公告"
 
 
+def test_event_dedupe_collapses_prefix_noise_and_keeps_higher_priority_source() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+    exchange_event = Event(
+        event_id="search-1",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "【公告】关于2026年报的公告", "2026-03-16", "https://www.szse.cn/disclosure/a"),
+        ticker="000001.SZ",
+        event_date="2026-03-16",
+        title="【公告】关于2026年报的公告",
+        raw_title="【公告】关于2026年报的公告",
+        event_type="financial_report",
+        sentiment="neutral",
+        source_type="exchange_search",
+        source="exchange_search",
+        source_priority=60,
+        importance="high",
+    )
+    cninfo_event = Event(
+        event_id="cninfo-1",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "关于2026年报的公告", "2026-03-16", "https://static.cninfo.com.cn/a.pdf"),
+        ticker="000001.SZ",
+        event_date="2026-03-16",
+        title="关于2026年报的公告",
+        raw_title="关于2026年报的公告",
+        event_type="financial_report",
+        sentiment="neutral",
+        source_type="filing",
+        source="cninfo",
+        source_priority=100,
+        importance="high",
+    )
+
+    deduped = service._dedupe_events([exchange_event, cninfo_event], limit=10)
+
+    assert len(deduped) == 1
+    assert deduped[0].source == "cninfo"
+    assert deduped[0].dedupe_key == cninfo_event.dedupe_key
+
+
 def test_event_dedupe_sorts_same_date_items_deterministically() -> None:
     service = StockDataService(repository=type("Repo", (), {})())
     events = [
