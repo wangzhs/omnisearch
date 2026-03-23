@@ -20,6 +20,7 @@ from app.schemas.stock import (
     PriceDaily,
     PriceListDebugResponse,
     RiskFlag,
+    SourcesHealthResponse,
     StockEndpointDebug,
     StockPaginationDebug,
     SyncHealthResponse,
@@ -44,16 +45,26 @@ def health_db() -> dict:
     }
 
 
-@router.get("/health/sources")
-def health_sources() -> dict:
-    return {
-        "status": "ok",
-        "sources": {
-            "tushare": {"configured": bool(settings.tushare_token), "base_url": settings.tushare_base_url},
-            "cninfo": {"configured": bool(settings.cninfo_announcements_url), "url": settings.cninfo_announcements_url},
-            "akshare": {"configured": True},
-        },
+@router.get("/health/sources", response_model=SourcesHealthResponse)
+def health_sources() -> SourcesHealthResponse:
+    sources = {
+        "tushare": {"configured": bool(settings.tushare_token), "base_url": settings.tushare_base_url},
+        "cninfo": {"configured": bool(settings.cninfo_announcements_url), "url": settings.cninfo_announcements_url},
+        "akshare": {"configured": True},
     }
+    configured_count = sum(1 for item in sources.values() if item["configured"])
+    total_sources = len(sources)
+    summary_status = "ok" if configured_count == total_sources else "partial"
+    return SourcesHealthResponse(
+        status="ok",
+        summary={
+            "status": summary_status,
+            "total_sources": total_sources,
+            "configured_count": configured_count,
+            "unconfigured_count": total_sources - configured_count,
+        },
+        sources=sources,
+    )
 
 
 @router.get("/health/sync", response_model=SyncHealthResponse)

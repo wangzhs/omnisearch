@@ -147,11 +147,25 @@ Supported query params:
 Reports upstream configuration state without probing live connectivity. Current response shape:
 
 - `status`
+- `summary`
 - `sources.tushare.configured`
 - `sources.tushare.base_url`
 - `sources.cninfo.configured`
 - `sources.cninfo.url`
 - `sources.akshare.configured`
+
+`summary` fields:
+
+- `status`
+- `total_sources`
+- `configured_count`
+- `unconfigured_count`
+
+`status` / `summary.status` semantics:
+
+- top-level `status`: endpoint health only; remains `ok` when the endpoint can report configuration state
+- `summary.status = ok`: all declared upstream sources are configured
+- `summary.status = partial`: at least one declared upstream source is currently unconfigured
 
 ### `GET /health/sync`
 

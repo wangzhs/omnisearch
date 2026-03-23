@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.schemas.stock import CompanyOverview, OverviewDebugResponse, SyncHealthResponse
+from app.schemas.stock import CompanyOverview, OverviewDebugResponse, SourcesHealthResponse, SyncHealthResponse
 from app.normalizers.stock import normalize_price_daily
 from app.schemas.search import SearchResult
 
@@ -1257,7 +1257,14 @@ def test_health_sources_reports_source_configuration(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
+    SourcesHealthResponse.model_validate(payload)
     assert payload["status"] == "ok"
+    assert payload["summary"] == {
+        "status": "partial",
+        "total_sources": 3,
+        "configured_count": 2,
+        "unconfigured_count": 1,
+    }
     assert "tushare" in payload["sources"]
     assert "cninfo" in payload["sources"]
     assert payload["sources"]["tushare"]["configured"] is False
@@ -1265,6 +1272,52 @@ def test_health_sources_reports_source_configuration(monkeypatch) -> None:
     assert payload["sources"]["cninfo"]["configured"] is True
     assert payload["sources"]["cninfo"]["url"] == "https://www.cninfo.com.cn/new/hisAnnouncement/query"
     assert payload["sources"]["akshare"]["configured"] is True
+
+
+def test_health_sources_uses_same_top_level_observability_shape_as_sync(monkeypatch) -> None:
+    class FakeRepository:
+        def list_sync_state(self, ticker: str | None = None):
+            return []
+
+    class HealthStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.settings.tushare_token", "token")
+    monkeypatch.setattr("app.api.routes.settings.tushare_base_url", "https://api.tushare.pro")
+    monkeypatch.setattr("app.api.routes.settings.cninfo_announcements_url", "https://www.cninfo.com.cn/new/hisAnnouncement/query")
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthStockService())
+    client = TestClient(app)
+
+    sources_response = client.get("/health/sources")
+    sync_response = client.get("/health/sync")
+
+    assert sources_response.status_code == 200
+    assert sync_response.status_code == 200
+    sources_payload = sources_response.json()
+    sync_payload = sync_response.json()
+    assert set(sources_payload) == {"status", "summary", "sources"}
+    assert set(sync_payload) == {"status", "ticker", "summary", "items"}
+    assert sources_payload["status"] == "ok"
+    assert sources_payload["summary"]["status"] == "ok"
+    assert sync_payload["status"] == "ok"
+    assert "summary" in sources_payload
+    assert "summary" in sync_payload
+    assert "sources" in sources_payload
+    assert "items" in sync_payload
+
+
+def test_health_sources_keeps_top_level_status_endpoint_oriented_when_configuration_is_partial(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.routes.settings.tushare_token", None)
+    monkeypatch.setattr("app.api.routes.settings.tushare_base_url", "https://api.tushare.pro")
+    monkeypatch.setattr("app.api.routes.settings.cninfo_announcements_url", "https://www.cninfo.com.cn/new/hisAnnouncement/query")
+    client = TestClient(app)
+
+    response = client.get("/health/sources")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["summary"]["status"] == "partial"
 
 
 def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:

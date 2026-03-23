@@ -573,6 +573,52 @@ class SyncHealthSummary(BaseModel):
     latest_degraded_dataset: str | None = None
 
 
+class SourceHealthItem(BaseModel):
+    configured: bool
+    base_url: str | None = None
+    url: str | None = None
+
+
+class SourcesHealthSummary(BaseModel):
+    status: Literal["ok", "partial"]
+    total_sources: int = 0
+    configured_count: int = 0
+    unconfigured_count: int = 0
+
+
+class SourcesHealthResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "ok",
+                "summary": {
+                    "status": "partial",
+                    "total_sources": 3,
+                    "configured_count": 2,
+                    "unconfigured_count": 1,
+                },
+                "sources": {
+                    "tushare": {
+                        "configured": False,
+                        "base_url": "https://api.tushare.pro",
+                    },
+                    "cninfo": {
+                        "configured": True,
+                        "url": "https://www.cninfo.com.cn/new/hisAnnouncement/query",
+                    },
+                    "akshare": {
+                        "configured": True,
+                    },
+                },
+            }
+        }
+    )
+
+    status: Literal["ok"]
+    summary: SourcesHealthSummary
+    sources: dict[str, SourceHealthItem] = Field(default_factory=dict)
+
+
 class SyncHealthResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
