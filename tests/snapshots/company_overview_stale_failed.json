@@ -1,161 +1,189 @@
 {
-  "ticker": "600036.SH",
   "company": {
     "data": {
-      "ticker": "600036.SH",
-      "name": "China Merchants Bank",
-      "exchange": null,
-      "market": null,
-      "industry": null,
       "area": null,
-      "list_date": null,
-      "status": null,
-      "website": null,
-      "chairman": null,
-      "manager": null,
-      "employees": null,
-      "main_business": null,
       "business_scope": null,
+      "chairman": null,
+      "employees": null,
+      "exchange": null,
+      "industry": null,
+      "list_date": null,
+      "main_business": null,
+      "manager": null,
+      "market": null,
+      "name": "China Merchants Bank",
       "source": "tushare",
       "source_priority": 100,
-      "updated_at": "2026-03-10T00:00:00Z"
+      "status": null,
+      "ticker": "600036.SH",
+      "updated_at": "2026-03-10T00:00:00Z",
+      "website": null
     },
     "data_status": {
-      "status": "stale",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "tushare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": "Upstream request timed out.",
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": "2026-03-17T00:00:00Z",
       "last_error_message": "Upstream request timed out.",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
       "source_metadata": {
-        "selected_source": "tushare",
-        "selected_source_priority": 100,
-        "fallback_used": false,
         "attempted_sources": [
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "tushare"
+        ],
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "stale",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "latest_financial": {
     "data": null,
     "data_status": {
-      "status": "stale",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "tushare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
       "source_metadata": {
-        "selected_source": "tushare",
-        "selected_source_priority": 100,
-        "fallback_used": false,
         "attempted_sources": [
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "tushare"
+        ],
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "stale",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "latest_price": {
     "data": null,
     "data_status": {
-      "status": "failed",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "akshare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": "eastmoney unavailable",
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": "2026-03-17T00:00:00Z",
       "last_error_message": "eastmoney unavailable",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "akshare",
       "source_metadata": {
-        "selected_source": "akshare",
-        "selected_source_priority": 90,
-        "fallback_used": false,
         "attempted_sources": [
           "akshare",
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "akshare"
+        ],
+        "selected_source": "akshare",
+        "selected_source_priority": 90,
+        "selection_reason": "test-fixture"
+      },
+      "status": "failed",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "recent_events": {
     "data": [],
     "data_status": {
-      "status": "missing",
-      "updated_at": null,
-      "source": null,
-      "ttl_hours": 24,
       "cache_hit": false,
       "error_message": null,
-      "last_synced_at": null,
-      "last_success_at": null,
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": null,
+      "last_synced_at": null,
+      "source": null,
       "source_metadata": {
-        "selected_source": null,
-        "selected_source_priority": null,
-        "fallback_used": false,
         "attempted_sources": [
           "cninfo",
           "exchange_search"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [],
+        "selected_source": null,
+        "selected_source_priority": null,
+        "selection_reason": "test-fixture"
+      },
+      "status": "missing",
+      "ttl_hours": 24,
+      "updated_at": null
     }
   },
   "risk_flags": {
     "data": [],
     "data_status": {
-      "status": "failed",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "derived",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": "Dependent sections are incomplete.",
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": "2026-03-17T00:00:00Z",
       "last_error_message": "Dependent sections are incomplete.",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
       "source_metadata": {
-        "selected_source": "derived",
-        "selected_source_priority": 0,
-        "fallback_used": false,
         "attempted_sources": [
           "derived"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "derived"
+        ],
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "selection_reason": "test-fixture"
+      },
+      "status": "failed",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "signals": {
     "data": [],
     "data_status": {
-      "status": "failed",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "derived",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": "Dependent sections are incomplete.",
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": "2026-03-17T00:00:00Z",
       "last_error_message": "Dependent sections are incomplete.",
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
       "source_metadata": {
-        "selected_source": "derived",
-        "selected_source_priority": 0,
-        "fallback_used": false,
         "attempted_sources": [
           "derived"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "derived"
+        ],
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "selection_reason": "test-fixture"
+      },
+      "status": "failed",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
-  }
+  },
+  "ticker": "600036.SH"
 }

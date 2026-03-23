@@ -65,6 +65,21 @@ def test_build_data_status_marks_fallback_source_usage() -> None:
     assert status.source_metadata.attempted_sources == ["akshare", "tushare"]
 
 
+def test_build_data_status_returns_partial_when_cached_data_has_upstream_error() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+
+    status = service._build_data_status(
+        source="tushare",
+        updated_at="2099-01-01T00:00:00Z",
+        cache_hit=True,
+        error_message="retry pending",
+        partial=True,
+    )
+
+    assert status.status == "partial"
+    assert status.error_message == "retry pending"
+
+
 def test_build_data_status_returns_missing_when_source_absent() -> None:
     service = StockDataService(repository=type("Repo", (), {})())
 
@@ -331,3 +346,116 @@ def test_runtime_sync_recording_covers_all_primary_datasets() -> None:
     assert datasets == {"company_profile", "financial_summary", "price_daily", "event"}
     assert all(item["success"] is True for item in recorded)
     assert all(item["records_written"] >= 1 for item in recorded)
+
+
+def test_prices_choose_highest_priority_runtime_source() -> None:
+    class FakeRepository:
+        def __init__(self):
+            self.prices = []
+
+        def list_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return self.prices
+
+        def upsert_prices(self, ticker: str, prices):
+            self.prices = prices
+            return prices
+
+        def get_last_synced_at(self, dataset: str, ticker: str):
+            return None
+
+        def get_sync_state(self, dataset: str, ticker: str):
+            return None
+
+    class FakeAKShareCollector:
+        def fetch_daily_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return [{"trade_date": "20260317", "close": 10.1, "source": "akshare"}]
+
+    class FakeTushareCollector:
+        def fetch_daily_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return [{"trade_date": "20260317", "close": 10.5, "source": "tushare"}]
+
+    service = StockDataService(
+        repository=FakeRepository(),
+        akshare_collector=FakeAKShareCollector(),
+        tushare_collector=FakeTushareCollector(),
+    )
+
+    prices, status, debug = service._load_prices("000001.SZ")
+
+    assert prices[0].source == "tushare"
+    assert prices[0].close == 10.5
+    assert status.source == "tushare"
+    assert status.source_metadata.fallback_used is True
+    assert status.source_metadata.selection_reason == "highest_source_priority"
+    assert [item.source for item in debug] == ["akshare", "tushare"]
+
+
+def test_events_expose_mixed_source_metadata_after_runtime_aggregation() -> None:
+    class FakeRepository:
+        def __init__(self):
+            self.events = []
+
+        def list_events(self, ticker: str, limit: int = 20):
+            return self.events
+
+        def replace_events(self, ticker: str, events):
+            self.events = events
+            return events
+
+        def upsert_events(self, ticker: str, events):
+            self.events = events
+            return events
+
+        def get_last_synced_at(self, dataset: str, ticker: str):
+            return None
+
+        def get_sync_state(self, dataset: str, ticker: str):
+            return None
+
+        def get_company_profile(self, ticker: str):
+            return None
+
+        def upsert_company_profile(self, profile):
+            return profile
+
+    class FakeCNInfoCollector:
+        def fetch_events(self, ticker: str, limit: int = 20):
+            return [{"announcementId": "ann-1", "announcementTitle": "关于年报的公告", "announcementTime": "2026-03-16", "adjunctUrl": "/same.pdf"}]
+
+    class FakeExchangeSearchCollector:
+        def fetch_events_with_debug(self, ticker: str, company_name: str | None = None, limit: int = 10):
+            return {
+                "items": [{
+                    "event_id": "search-1",
+                    "dedupe_key": "000001.SZ:shared-key",
+                    "ticker": ticker,
+                    "event_date": "2026-03-16",
+                    "title": "关于年报的公告",
+                    "raw_title": "关于年报的公告",
+                    "event_type": "financial_report",
+                    "category": "exchange_disclosure",
+                    "sentiment": "neutral",
+                    "source_type": "exchange_search",
+                    "source": "exchange_search",
+                    "source_priority": 60,
+                    "url": "https://www.szse.cn/disclosure/shared",
+                    "source_url": "https://www.szse.cn/disclosure/shared",
+                    "summary": "exchange result",
+                    "importance": "high",
+                }],
+                "debug": {"source": "exchange_search", "status": "ok", "count": 1, "kept_count": 1, "error": None},
+            }
+
+    service = StockDataService(
+        repository=FakeRepository(),
+        cninfo_collector=FakeCNInfoCollector(),
+        exchange_search_collector=FakeExchangeSearchCollector(),
+        tushare_collector=type("FakeTushareCollector", (), {"fetch_company_profile": lambda self, ticker: {"basic": {"name": "平安银行"}, "company": {}}})(),
+    )
+
+    events, status, _ = service._load_events("000001.SZ")
+
+    assert len(events) == 2
+    assert status.source_metadata.selected_source == "cninfo"
+    assert "cninfo" in status.source_metadata.returned_sources
+    assert "exchange_search" in status.source_metadata.returned_sources

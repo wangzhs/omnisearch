@@ -17,6 +17,7 @@ from app.normalizers.stock import (
     normalize_ticker_input,
 )
 from app.schemas.stock import (
+    CompanyDebugResponse,
     CompanyOverview,
     CompanyOverviewCompanySection,
     CompanyOverviewEventsSection,
@@ -27,6 +28,7 @@ from app.schemas.stock import (
     DataStatus,
     EventListDebugResponse,
     EventSourceDebug,
+    FinancialListDebugResponse,
     PriceListDebugResponse,
     PriceSourceDebug,
     RiskFlag,
@@ -58,6 +60,11 @@ class StockDataService:
             return company
         raise RuntimeError(data_status.error_message or f"No company profile found for {ticker}")
 
+    def get_company_with_debug(self, ticker: str, refresh: bool = False) -> CompanyDebugResponse:
+        normalized = normalize_ticker_input(ticker)
+        company, data_status = self._load_company(normalized, refresh=refresh)
+        return CompanyDebugResponse(ticker=normalized, data=company, data_status=data_status)
+
     def list_events(self, ticker: str, limit: int = 20, refresh: bool = False) -> list[Event]:
         return self.list_events_with_debug(ticker=ticker, limit=limit, refresh=refresh).items
 
@@ -69,6 +76,11 @@ class StockDataService:
     def list_financials(self, ticker: str, limit: int = 8, refresh: bool = False) -> list[FinancialSummary]:
         items, _ = self._load_financials(normalize_ticker_input(ticker), limit=limit, refresh=refresh)
         return items
+
+    def list_financials_with_debug(self, ticker: str, limit: int = 8, refresh: bool = False) -> FinancialListDebugResponse:
+        normalized = normalize_ticker_input(ticker)
+        items, data_status = self._load_financials(normalized, limit=limit, refresh=refresh)
+        return FinancialListDebugResponse(ticker=normalized, items=items, data_status=data_status)
 
     def list_prices(
         self,
@@ -511,11 +523,16 @@ class StockDataService:
                 updated_at=last_synced_at or items[-1].updated_at,
                 cache_hit=True,
                 sync_state=sync_state,
-                source_metadata=self._build_source_metadata(items[-1].source, attempted_sources=["cache"]),
+                source_metadata=self._build_source_metadata(
+                    items[-1].source,
+                    attempted_sources=["cache"],
+                    returned_sources=[items[-1].source],
+                    selection_reason="cache_hit",
+                ),
             ), [PriceSourceDebug(source="cache", status="hit", count=len(items))]
 
         debug: list[PriceSourceDebug] = []
-        raw_prices: list[dict] = []
+        raw_prices_by_source: dict[str, list[dict]] = {}
         last_error: str | None = None
         for source_name, collector in (
             ("akshare", self.akshare_collector.fetch_daily_prices),
@@ -523,15 +540,15 @@ class StockDataService:
         ):
             try:
                 raw_prices = collector(ticker, limit=limit, start_date=start_date, end_date=end_date)
+                raw_prices_by_source[source_name] = raw_prices
                 debug.append(PriceSourceDebug(source=source_name, status="ok" if raw_prices else "empty", count=len(raw_prices)))
             except RuntimeError as exc:
                 last_error = str(exc)
                 debug.append(PriceSourceDebug(source=source_name, status="error", count=0, error=last_error))
-                raw_prices = []
-            if raw_prices:
-                break
-
-        prices = [normalize_price_daily(ticker, raw) for raw in raw_prices]
+        selected_source = self._select_runtime_source(
+            [source_name for source_name, rows in raw_prices_by_source.items() if rows]
+        )
+        prices = [normalize_price_daily(ticker, raw) for raw in raw_prices_by_source.get(selected_source, [])]
         if prices:
             self.repository.upsert_prices(ticker, prices)
             self._record_dataset_sync(
@@ -542,7 +559,9 @@ class StockDataService:
                 started_at=started_at,
             )
             latest = list(reversed(self.repository.list_prices(ticker, limit=limit, start_date=start_date, end_date=end_date)))
-            selected_source = latest[-1].source if latest else None
+            selected_source = latest[-1].source if latest else selected_source
+            attempted_sources = [item.source for item in debug]
+            returned_sources = list(raw_prices_by_source)
             return latest, self._build_data_status(
                 source=selected_source,
                 updated_at=last_synced_at or latest[-1].updated_at,
@@ -550,8 +569,15 @@ class StockDataService:
                 sync_state=self._get_sync_state("price_daily", ticker),
                 source_metadata=self._build_source_metadata(
                     selected_source,
-                    attempted_sources=[item.source for item in debug],
-                    fallback_used=bool(selected_source and debug and selected_source != debug[0].source),
+                    attempted_sources=attempted_sources,
+                    returned_sources=returned_sources,
+                    fallback_used=bool(selected_source and attempted_sources and selected_source != attempted_sources[0]),
+                    selection_reason="highest_source_priority",
+                    fallback_reason=self._build_fallback_reason(
+                        selected_source=selected_source,
+                        attempted_sources=attempted_sources,
+                        returned_sources=returned_sources,
+                    ),
                 ),
             ), debug
         if cached:
@@ -569,8 +595,16 @@ class StockDataService:
                 updated_at=last_synced_at or items[-1].updated_at,
                 cache_hit=True,
                 error_message=last_error or "Upstream returned empty price rows.",
+                partial=True,
                 sync_state=sync_state,
-                source_metadata=self._build_source_metadata(items[-1].source, attempted_sources=[item.source for item in debug]),
+                source_metadata=self._build_source_metadata(
+                    items[-1].source,
+                    attempted_sources=[item.source for item in debug],
+                    returned_sources=[items[-1].source],
+                    fallback_used=True,
+                    selection_reason="cache_fallback_after_upstream_failure",
+                    fallback_reason=last_error or "Upstream returned empty price rows.",
+                ),
             ), debug
         if last_error:
             self._record_dataset_sync(
@@ -587,7 +621,12 @@ class StockDataService:
                 error_message=last_error,
                 failed=True,
                 sync_state=sync_state,
-                source_metadata=self._build_source_metadata("akshare", attempted_sources=[item.source for item in debug]),
+                source_metadata=self._build_source_metadata(
+                    "akshare",
+                    attempted_sources=[item.source for item in debug],
+                    selection_reason="upstream_failure",
+                    fallback_reason=last_error,
+                ),
             ), debug
         self._record_dataset_sync("price_daily", ticker, success=True, records_written=0, started_at=started_at)
         sync_state = self._get_sync_state("price_daily", ticker)
@@ -597,7 +636,11 @@ class StockDataService:
             cache_hit=False,
             missing=True,
             sync_state=sync_state,
-            source_metadata=self._build_source_metadata(None, attempted_sources=[item.source for item in debug]),
+            source_metadata=self._build_source_metadata(
+                None,
+                attempted_sources=[item.source for item in debug],
+                selection_reason="no_source_returned_data",
+            ),
         ), debug
 
     def _load_events(
@@ -616,7 +659,12 @@ class StockDataService:
                 updated_at=last_synced_at or cached[0].updated_at,
                 cache_hit=True,
                 sync_state=sync_state,
-                source_metadata=self._build_source_metadata(cached[0].source, attempted_sources=["cache"]),
+                source_metadata=self._build_source_metadata(
+                    cached[0].source,
+                    attempted_sources=["cache"],
+                    returned_sources=self._event_sources(cached),
+                    selection_reason="cache_hit",
+                ),
             ), [EventSourceDebug(source="cache", status="hit", count=len(cached), kept_count=len(cached))]
 
         debug: list[EventSourceDebug] = []
@@ -639,29 +687,28 @@ class StockDataService:
             debug.append(EventSourceDebug(source="cninfo", status="error", count=0, kept_count=0, error=error_message))
 
         company_name = None
-        if not collected:
-            company, _ = self._load_company(ticker, refresh=refresh)
-            company_name = company.name if company else None
-            try:
-                fallback_payload = self.exchange_search_collector.fetch_events_with_debug(
-                    ticker,
-                    company_name=company_name,
-                    limit=limit,
+        company, _ = self._load_company(ticker, refresh=refresh)
+        company_name = company.name if company else None
+        try:
+            fallback_payload = self.exchange_search_collector.fetch_events_with_debug(
+                ticker,
+                company_name=company_name,
+                limit=limit,
+            )
+            fallback_events = [Event(**item) for item in fallback_payload["items"]]
+            collected.extend(fallback_events)
+            debug.append(EventSourceDebug(**fallback_payload["debug"]))
+        except RuntimeError as exc:
+            error_message = str(exc)
+            debug.append(
+                EventSourceDebug(
+                    source="exchange_search",
+                    status="error",
+                    count=0,
+                    kept_count=0,
+                    error=error_message,
                 )
-                fallback_events = [Event(**item) for item in fallback_payload["items"]]
-                collected.extend(fallback_events)
-                debug.append(EventSourceDebug(**fallback_payload["debug"]))
-            except RuntimeError as exc:
-                error_message = str(exc)
-                debug.append(
-                    EventSourceDebug(
-                        source="exchange_search",
-                        status="error",
-                        count=0,
-                        kept_count=0,
-                        error=error_message,
-                    )
-                )
+            )
 
         deduped = self._dedupe_events(collected, limit=limit)
         if deduped:
@@ -677,17 +724,28 @@ class StockDataService:
                 started_at=started_at,
             )
             latest = self.repository.list_events(ticker, limit=limit)
-            selected_source = latest[0].source if latest else None
+            selected_source = self._select_primary_event_source(latest) if latest else None
+            attempted_sources = [item.source for item in debug]
+            returned_sources = self._event_sources(latest)
             return latest, self._build_data_status(
                 source=selected_source,
                 updated_at=last_synced_at or latest[0].updated_at,
                 cache_hit=False,
                 error_message=error_message,
+                partial=bool(error_message),
                 sync_state=self._get_sync_state("event", ticker),
                 source_metadata=self._build_source_metadata(
                     selected_source,
-                    attempted_sources=[item.source for item in debug],
-                    fallback_used=bool(selected_source and debug and selected_source != debug[0].source),
+                    attempted_sources=attempted_sources,
+                    returned_sources=returned_sources,
+                    fallback_used=bool(selected_source and attempted_sources and selected_source != attempted_sources[0]),
+                    selection_reason="event_dedupe_by_source_priority",
+                    fallback_reason=self._build_fallback_reason(
+                        selected_source=selected_source,
+                        attempted_sources=attempted_sources,
+                        returned_sources=returned_sources,
+                        error_message=error_message,
+                    ),
                 ),
             ), debug
         if cached:
@@ -704,8 +762,16 @@ class StockDataService:
                 updated_at=last_synced_at or cached[0].updated_at,
                 cache_hit=True,
                 error_message=error_message or "No upstream event rows returned.",
+                partial=True,
                 sync_state=sync_state,
-                source_metadata=self._build_source_metadata(cached[0].source, attempted_sources=[item.source for item in debug]),
+                source_metadata=self._build_source_metadata(
+                    cached[0].source,
+                    attempted_sources=[item.source for item in debug],
+                    returned_sources=self._event_sources(cached),
+                    fallback_used=True,
+                    selection_reason="cache_fallback_after_upstream_failure",
+                    fallback_reason=error_message or "No upstream event rows returned.",
+                ),
             ), debug
         if error_message:
             self._record_dataset_sync(
@@ -722,7 +788,12 @@ class StockDataService:
                 error_message=error_message,
                 failed=True,
                 sync_state=sync_state,
-                source_metadata=self._build_source_metadata("cninfo", attempted_sources=[item.source for item in debug]),
+                source_metadata=self._build_source_metadata(
+                    "cninfo",
+                    attempted_sources=[item.source for item in debug],
+                    selection_reason="upstream_failure",
+                    fallback_reason=error_message,
+                ),
             ), debug
         self._record_dataset_sync("event", ticker, success=True, records_written=0, started_at=started_at)
         sync_state = self._get_sync_state("event", ticker)
@@ -732,7 +803,11 @@ class StockDataService:
             cache_hit=False,
             missing=True,
             sync_state=sync_state,
-            source_metadata=self._build_source_metadata(None, attempted_sources=[item.source for item in debug]),
+            source_metadata=self._build_source_metadata(
+                None,
+                attempted_sources=[item.source for item in debug],
+                selection_reason="no_source_returned_data",
+            ),
         ), debug
 
     def _should_refresh(self, dataset: str, ticker: str, force_refresh: bool) -> bool:
@@ -801,6 +876,7 @@ class StockDataService:
         error_message: str | None = None,
         missing: bool = False,
         failed: bool = False,
+        partial: bool = False,
         sync_state: dict | None = None,
         source_metadata: SourceMetadata | None = None,
     ) -> DataStatus:
@@ -808,6 +884,8 @@ class StockDataService:
             status = "failed"
         elif missing or source is None:
             status = "missing"
+        elif partial or (sync_state and sync_state.get("status") == "partial"):
+            status = "partial" if not self._is_stale(updated_at) else "stale"
         elif self._is_stale(updated_at):
             status = "stale"
         else:
@@ -820,7 +898,7 @@ class StockDataService:
             source=source,
             ttl_hours=settings.stock_data_ttl_hours,
             cache_hit=cache_hit,
-            error_message=error_message,
+            error_message=error_message or self._sync_state_value(sync_state, "last_error_message"),
             last_synced_at=self._sync_state_value(sync_state, "last_synced_at"),
             last_success_at=self._sync_state_value(sync_state, "last_success_at"),
             last_error_at=self._sync_state_value(sync_state, "last_error_at"),
@@ -911,18 +989,73 @@ class StockDataService:
         selected_source: str | None,
         *,
         attempted_sources: list[str] | None = None,
+        returned_sources: list[str] | None = None,
         fallback_used: bool = False,
+        selection_reason: str | None = None,
+        fallback_reason: str | None = None,
     ) -> SourceMetadata:
         sources = []
         for source_name in attempted_sources or []:
             if source_name and source_name not in sources:
                 sources.append(source_name)
+        kept_sources = []
+        for source_name in returned_sources or []:
+            if source_name and source_name not in kept_sources:
+                kept_sources.append(source_name)
         return SourceMetadata(
             selected_source=selected_source,
             selected_source_priority=get_source_priority(selected_source) if selected_source else None,
             fallback_used=fallback_used,
             attempted_sources=sources,
+            returned_sources=kept_sources,
+            selection_reason=selection_reason,
+            fallback_reason=fallback_reason,
         )
+
+    def _build_fallback_reason(
+        self,
+        *,
+        selected_source: str | None,
+        attempted_sources: list[str],
+        returned_sources: list[str],
+        error_message: str | None = None,
+    ) -> str | None:
+        if error_message:
+            return error_message
+        if selected_source and attempted_sources and selected_source != attempted_sources[0]:
+            return f"Selected {selected_source} because it outranked earlier source attempts."
+        if len(returned_sources) > 1:
+            return "Returned rows from multiple sources after source-priority evaluation."
+        return None
+
+    def _select_runtime_source(self, available_sources: list[str]) -> str | None:
+        candidates = [source_name for source_name in available_sources if source_name]
+        if not candidates:
+            return None
+        return sorted(
+            candidates,
+            key=lambda source_name: (get_source_priority(source_name), source_name),
+            reverse=True,
+        )[0]
+
+    def _event_sources(self, events: list[Event]) -> list[str]:
+        sources: list[str] = []
+        for event in events:
+            if event.source and event.source not in sources:
+                sources.append(event.source)
+        return sources
+
+    def _select_primary_event_source(self, events: list[Event]) -> str | None:
+        counts: dict[str, int] = {}
+        for event in events:
+            counts[event.source] = counts.get(event.source, 0) + 1
+        if not counts:
+            return None
+        return sorted(
+            counts,
+            key=lambda source_name: (get_source_priority(source_name), counts[source_name], source_name),
+            reverse=True,
+        )[0]
 
     def _dedupe_events(self, events: list[Event], limit: int) -> list[Event]:
         deduped: dict[str, Event] = {}

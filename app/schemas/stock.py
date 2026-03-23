@@ -41,10 +41,13 @@ class SourceMetadata(BaseModel):
     selected_source_priority: int | None = None
     fallback_used: bool = False
     attempted_sources: list[str] = Field(default_factory=list)
+    returned_sources: list[str] = Field(default_factory=list)
+    selection_reason: str | None = None
+    fallback_reason: str | None = None
 
 
 class DataStatus(BaseModel):
-    status: Literal["fresh", "stale", "missing", "failed"]
+    status: Literal["fresh", "partial", "stale", "missing", "failed"]
     updated_at: str | None = None
     source: str | None = None
     ttl_hours: int
@@ -390,6 +393,18 @@ class EventListDebugResponse(BaseModel):
     items: list[Event] = Field(default_factory=list)
     data_status: DataStatus
     debug: list[EventSourceDebug] = Field(default_factory=list)
+
+
+class CompanyDebugResponse(BaseModel):
+    ticker: str
+    data: CompanyProfile | None = None
+    data_status: DataStatus
+
+
+class FinancialListDebugResponse(BaseModel):
+    ticker: str
+    items: list[FinancialSummary] = Field(default_factory=list)
+    data_status: DataStatus
 
 
 class TimelineItem(BaseModel):

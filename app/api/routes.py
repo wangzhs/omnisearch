@@ -9,10 +9,12 @@ from app.schemas.extract import ExtractRequest, ExtractResponse
 from app.schemas.research import ResearchItem, ResearchRequest, ResearchResponse, ResearchSearchDebugItem
 from app.schemas.search import SearchRequest, SearchResponse, SearchResult
 from app.schemas.stock import (
+    CompanyDebugResponse,
     CompanyOverview,
     CompanyProfile,
     EventListDebugResponse,
     Event,
+    FinancialListDebugResponse,
     FinancialSummary,
     PriceDaily,
     PriceListDebugResponse,
@@ -155,10 +157,13 @@ def research(request: ResearchRequest) -> ResearchResponse:
     )
 
 
-@router.get("/company/{ticker}", response_model=CompanyProfile)
-def get_company(ticker: str, refresh: bool = False) -> CompanyProfile:
+@router.get("/company/{ticker}", response_model=CompanyProfile | CompanyDebugResponse)
+def get_company(ticker: str, refresh: bool = False, debug: bool = False) -> CompanyProfile | CompanyDebugResponse:
     try:
-        return get_stock_data_service().get_company(ticker, refresh=refresh)
+        service = get_stock_data_service()
+        if debug:
+            return service.get_company_with_debug(ticker, refresh=refresh)
+        return service.get_company(ticker, refresh=refresh)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -209,18 +214,32 @@ def get_company_events(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.get("/company/{ticker}/financials", response_model=list[FinancialSummary])
+@router.get("/company/{ticker}/financials", response_model=list[FinancialSummary] | FinancialListDebugResponse)
 def get_company_financials(
     ticker: str,
     limit: int = 8,
     refresh: bool = False,
+    debug: bool = False,
     report_type: str | None = None,
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=8, ge=1, le=100),
-    ) -> list[FinancialSummary]:
+    ) -> list[FinancialSummary] | FinancialListDebugResponse:
     try:
-        items = get_stock_data_service().list_financials(ticker, limit=max(limit, page * page_size), refresh=refresh)
+        service = get_stock_data_service()
+        if debug:
+            payload = service.list_financials_with_debug(ticker, limit=max(limit, page * page_size), refresh=refresh)
+            items = _get_payload_items(payload)
+            if report_type:
+                items = [item for item in items if _item_value(item, "report_type") == report_type]
+            items = sorted(items, key=lambda item: _item_value(item, "report_date") or "", reverse=(sort_order == "desc"))
+            items = _paginate_list(items, page=page, page_size=page_size)
+            if isinstance(payload, dict):
+                payload["items"] = items
+            else:
+                payload.items = items
+            return payload
+        items = service.list_financials(ticker, limit=max(limit, page * page_size), refresh=refresh)
         if report_type:
             items = [item for item in items if _item_value(item, "report_type") == report_type]
         items = sorted(items, key=lambda item: _item_value(item, "report_date") or "", reverse=(sort_order == "desc"))

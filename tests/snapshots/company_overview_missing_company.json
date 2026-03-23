@@ -1,219 +1,249 @@
 {
-  "ticker": "002837.SZ",
   "company": {
     "data": {
-      "ticker": "002837.SZ",
-      "name": null,
-      "exchange": null,
-      "market": null,
-      "industry": null,
       "area": null,
-      "list_date": null,
-      "status": "unknown",
-      "website": null,
-      "chairman": null,
-      "manager": null,
-      "employees": null,
-      "main_business": null,
       "business_scope": null,
+      "chairman": null,
+      "employees": null,
+      "exchange": null,
+      "industry": null,
+      "list_date": null,
+      "main_business": null,
+      "manager": null,
+      "market": null,
+      "name": null,
       "source": "fallback",
       "source_priority": null,
-      "updated_at": null
+      "status": "unknown",
+      "ticker": "002837.SZ",
+      "updated_at": null,
+      "website": null
     },
     "data_status": {
-      "status": "missing",
-      "updated_at": null,
-      "source": "tushare",
-      "ttl_hours": 24,
       "cache_hit": false,
       "error_message": null,
-      "last_synced_at": null,
-      "last_success_at": null,
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": null,
+      "last_synced_at": null,
+      "source": "tushare",
       "source_metadata": {
-        "selected_source": "tushare",
-        "selected_source_priority": 100,
-        "fallback_used": false,
         "attempted_sources": [
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "tushare"
+        ],
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "missing",
+      "ttl_hours": 24,
+      "updated_at": null
     }
   },
   "latest_financial": {
     "data": {
-      "record_id": "000001.SZ:2025-12-31:annual",
-      "ticker": "000001.SZ",
-      "report_date": "2025-12-31",
       "announcement_date": "2026-03-16",
+      "eps": 0.2,
+      "gross_margin": 30.0,
+      "net_profit": -5.0,
+      "net_profit_yoy": -10.0,
+      "record_id": "000001.SZ:2025-12-31:annual",
+      "report_date": "2025-12-31",
       "report_type": "annual",
       "revenue": 100.0,
       "revenue_yoy": -2.0,
-      "net_profit": -5.0,
-      "net_profit_yoy": -10.0,
-      "eps": 0.2,
       "roe": 1.0,
-      "gross_margin": 30.0,
       "source": "tushare",
       "source_priority": 100,
+      "ticker": "000001.SZ",
       "updated_at": "2026-03-17T00:00:00Z"
     },
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "tushare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
       "source_metadata": {
-        "selected_source": "tushare",
-        "selected_source_priority": 100,
-        "fallback_used": false,
         "attempted_sources": [
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "tushare"
+        ],
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "latest_price": {
     "data": {
-      "ticker": "000001.SZ",
-      "trade_date": "2026-03-13",
-      "open": 10.0,
-      "high": 11.0,
-      "low": 9.9,
-      "close": 10.8,
-      "volume": 1000.0,
       "amount": 5000.0,
       "change_pct": 9.5,
-      "turnover_rate": 2.0,
+      "close": 10.8,
+      "high": 11.0,
+      "low": 9.9,
+      "open": 10.0,
       "source": "akshare",
       "source_priority": 90,
-      "updated_at": "2026-03-17T00:00:00Z"
+      "ticker": "000001.SZ",
+      "trade_date": "2026-03-13",
+      "turnover_rate": 2.0,
+      "updated_at": "2026-03-17T00:00:00Z",
+      "volume": 1000.0
     },
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "akshare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "akshare",
       "source_metadata": {
-        "selected_source": "akshare",
-        "selected_source_priority": 90,
-        "fallback_used": false,
         "attempted_sources": [
           "akshare",
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "akshare"
+        ],
+        "selected_source": "akshare",
+        "selected_source_priority": 90,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "recent_events": {
     "data": [
       {
-        "event_id": "evt-1",
-        "ticker": "000001.SZ",
+        "category": "report",
         "dedupe_key": "evt-1",
         "event_date": "2026-03-16",
-        "title": "Annual report disclosed",
-        "raw_title": "Annual report disclosed",
+        "event_id": "evt-1",
         "event_type": "financial_report",
-        "category": "report",
+        "importance": "high",
+        "raw_title": "Annual report disclosed",
         "sentiment": "neutral",
-        "source_type": "filing",
         "source": "cninfo",
         "source_priority": 100,
-        "url": "https://example.com/report.pdf",
+        "source_type": "filing",
         "source_url": "https://example.com/report.pdf",
         "summary": "Annual report filing",
+        "ticker": "000001.SZ",
+        "title": "Annual report disclosed",
         "updated_at": "2026-03-17T00:00:00Z",
-        "importance": "high"
+        "url": "https://example.com/report.pdf"
       }
     ],
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "cninfo",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "cninfo",
       "source_metadata": {
-        "selected_source": "cninfo",
-        "selected_source_priority": 100,
-        "fallback_used": false,
         "attempted_sources": [
           "cninfo",
           "exchange_search"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "cninfo"
+        ],
+        "selected_source": "cninfo",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "risk_flags": {
     "data": [
       {
-        "level": "high",
+        "as_of_date": null,
         "code": "negative_net_profit",
-        "message": "Latest reported net profit is negative.",
         "dimension": null,
-        "as_of_date": null
+        "level": "high",
+        "message": "Latest reported net profit is negative."
       }
     ],
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "derived",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
       "source_metadata": {
-        "selected_source": "derived",
-        "selected_source_priority": 0,
-        "fallback_used": false,
         "attempted_sources": [
           "derived"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "derived"
+        ],
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "signals": {
     "data": [],
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "derived",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
       "source_metadata": {
-        "selected_source": "derived",
-        "selected_source_priority": 0,
-        "fallback_used": false,
         "attempted_sources": [
           "derived"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "derived"
+        ],
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
-  }
+  },
+  "ticker": "002837.SZ"
 }

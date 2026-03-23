@@ -1,219 +1,249 @@
 {
-  "ticker": "002837.SZ",
   "company": {
     "data": {
-      "ticker": "000001.SZ",
-      "name": "Ping An Bank",
-      "exchange": "SZSE",
-      "market": "Main Board",
-      "industry": "Bank",
       "area": "Guangdong",
-      "list_date": "1991-04-03",
-      "status": "L",
-      "website": "https://bank.pingan.com",
-      "chairman": null,
-      "manager": null,
-      "employees": null,
-      "main_business": null,
       "business_scope": null,
+      "chairman": null,
+      "employees": null,
+      "exchange": "SZSE",
+      "industry": "Bank",
+      "list_date": "1991-04-03",
+      "main_business": null,
+      "manager": null,
+      "market": "Main Board",
+      "name": "Ping An Bank",
       "source": "tushare",
       "source_priority": 100,
-      "updated_at": "2026-03-17T00:00:00Z"
+      "status": "L",
+      "ticker": "000001.SZ",
+      "updated_at": "2026-03-17T00:00:00Z",
+      "website": "https://bank.pingan.com"
     },
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "tushare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
       "source_metadata": {
-        "selected_source": "tushare",
-        "selected_source_priority": 100,
-        "fallback_used": false,
         "attempted_sources": [
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "tushare"
+        ],
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "latest_financial": {
     "data": {
-      "record_id": "000001.SZ:2025-12-31:annual",
-      "ticker": "000001.SZ",
-      "report_date": "2025-12-31",
       "announcement_date": "2026-03-16",
+      "eps": 0.2,
+      "gross_margin": 30.0,
+      "net_profit": -5.0,
+      "net_profit_yoy": -10.0,
+      "record_id": "000001.SZ:2025-12-31:annual",
+      "report_date": "2025-12-31",
       "report_type": "annual",
       "revenue": 100.0,
       "revenue_yoy": -2.0,
-      "net_profit": -5.0,
-      "net_profit_yoy": -10.0,
-      "eps": 0.2,
       "roe": 1.0,
-      "gross_margin": 30.0,
       "source": "tushare",
       "source_priority": 100,
+      "ticker": "000001.SZ",
       "updated_at": "2026-03-17T00:00:00Z"
     },
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "tushare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
       "source_metadata": {
-        "selected_source": "tushare",
-        "selected_source_priority": 100,
-        "fallback_used": false,
         "attempted_sources": [
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "tushare"
+        ],
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "latest_price": {
     "data": {
-      "ticker": "000001.SZ",
-      "trade_date": "2026-03-13",
-      "open": 10.0,
-      "high": 11.0,
-      "low": 9.9,
-      "close": 10.8,
-      "volume": 1000.0,
       "amount": 5000.0,
       "change_pct": 9.5,
-      "turnover_rate": 2.0,
+      "close": 10.8,
+      "high": 11.0,
+      "low": 9.9,
+      "open": 10.0,
       "source": "tushare",
       "source_priority": 100,
-      "updated_at": "2026-03-17T00:00:00Z"
+      "ticker": "000001.SZ",
+      "trade_date": "2026-03-13",
+      "turnover_rate": 2.0,
+      "updated_at": "2026-03-17T00:00:00Z",
+      "volume": 1000.0
     },
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "tushare",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "tushare",
       "source_metadata": {
-        "selected_source": "tushare",
-        "selected_source_priority": 100,
-        "fallback_used": true,
         "attempted_sources": [
           "akshare",
           "tushare"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": true,
+        "returned_sources": [
+          "tushare"
+        ],
+        "selected_source": "tushare",
+        "selected_source_priority": 100,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "recent_events": {
     "data": [
       {
-        "event_id": "evt-fallback",
-        "ticker": "002837.SZ",
+        "category": "exchange_disclosure",
         "dedupe_key": "evt-fallback",
         "event_date": "2026-03-16",
-        "title": "英维克 年报公告",
-        "raw_title": "英维克 年报公告",
+        "event_id": "evt-fallback",
         "event_type": "financial_report",
-        "category": "exchange_disclosure",
+        "importance": "high",
+        "raw_title": "英维克 年报公告",
         "sentiment": "neutral",
-        "source_type": "exchange_search",
         "source": "exchange_search",
         "source_priority": 60,
-        "url": "https://www.szse.cn/disclosure/test",
+        "source_type": "exchange_search",
         "source_url": "https://www.szse.cn/disclosure/test",
         "summary": "Fallback event source",
+        "ticker": "002837.SZ",
+        "title": "英维克 年报公告",
         "updated_at": "2026-03-17T00:00:00Z",
-        "importance": "high"
+        "url": "https://www.szse.cn/disclosure/test"
       }
     ],
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "exchange_search",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "exchange_search",
       "source_metadata": {
-        "selected_source": "exchange_search",
-        "selected_source_priority": 60,
-        "fallback_used": true,
         "attempted_sources": [
           "cninfo",
           "exchange_search"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": true,
+        "returned_sources": [
+          "exchange_search"
+        ],
+        "selected_source": "exchange_search",
+        "selected_source_priority": 60,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "risk_flags": {
     "data": [
       {
-        "level": "high",
+        "as_of_date": null,
         "code": "negative_net_profit",
-        "message": "Latest reported net profit is negative.",
         "dimension": null,
-        "as_of_date": null
+        "level": "high",
+        "message": "Latest reported net profit is negative."
       }
     ],
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "derived",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
       "source_metadata": {
-        "selected_source": "derived",
-        "selected_source_priority": 0,
-        "fallback_used": false,
         "attempted_sources": [
           "derived"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "derived"
+        ],
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
   },
   "signals": {
     "data": [],
     "data_status": {
-      "status": "fresh",
-      "updated_at": "2026-03-17T00:00:00Z",
-      "source": "derived",
-      "ttl_hours": 24,
       "cache_hit": true,
       "error_message": null,
-      "last_synced_at": "2026-03-17T00:00:00Z",
-      "last_success_at": "2026-03-17T00:00:00Z",
       "last_error_at": null,
       "last_error_message": null,
+      "last_success_at": "2026-03-17T00:00:00Z",
+      "last_synced_at": "2026-03-17T00:00:00Z",
+      "source": "derived",
       "source_metadata": {
-        "selected_source": "derived",
-        "selected_source_priority": 0,
-        "fallback_used": false,
         "attempted_sources": [
           "derived"
-        ]
-      }
+        ],
+        "fallback_reason": null,
+        "fallback_used": false,
+        "returned_sources": [
+          "derived"
+        ],
+        "selected_source": "derived",
+        "selected_source_priority": 0,
+        "selection_reason": "test-fixture"
+      },
+      "status": "fresh",
+      "ttl_hours": 24,
+      "updated_at": "2026-03-17T00:00:00Z"
     }
-  }
+  },
+  "ticker": "002837.SZ"
 }
