@@ -21,57 +21,53 @@ Constraints:
 
 ## Current Task
 
-Harden `/health/sync` and `/company/{ticker}/overview` with minimal necessary changes.
+Harden event normalization and event-list stability with minimal necessary changes.
 
 ### Scope
 
-1. Fix ticker normalization in `/health/sync`
-- `app/api/routes.py` currently forwards the raw optional `ticker` query parameter directly to `repository.list_sync_state()`.
-- Sync state is now written with normalized tickers, so `/health/sync?ticker=000001` can miss rows stored under `000001.SZ`.
-- Make `/health/sync` normalize ticker filters when a ticker is provided.
-- Preserve behavior when `ticker` is omitted.
-- Return the normalized ticker value in the response payload when a ticker filter is used.
-- Add or update API tests for:
-  - `/health/sync?ticker=000001` returning rows for `000001.SZ`
-  - omitted ticker still returning all rows
+1. Harden cross-source event dedupe
+- `cninfo` and `exchange_search` can describe the same disclosure with different URLs.
+- Current dedupe keys depend on normalized URL, which makes cross-source dedupe fragile and can keep duplicate event rows when the title/date are the same but URLs differ.
+- Improve event dedupe so semantically identical events from different sources are more likely to collapse to one normalized event.
+- Preserve source-priority selection semantics: when duplicates collapse, the higher-priority source should still win.
+- Keep the stable `event_type` taxonomy unchanged.
 
-2. Remove duplicate stock dataset loads during overview assembly
-- In `app/services/stock.py`, `get_overview_with_debug()` already loads company, financials, prices, and events.
-- It then calls `get_risk_flags(ticker, refresh=refresh)`, which reloads financials, prices, and events again through public service methods.
-- This causes duplicated repository/upstream work and risks inconsistent section state within a single overview response.
-- Refactor overview assembly so risk flags are derived from the already-loaded `financials`, `prices`, and `events`.
-- Keep the external response contract unchanged.
-- Keep refresh/cache semantics stable from the caller perspective.
+2. Tighten event ordering stability
+- Event ordering currently relies on a mix of `event_date`, `importance`, and `updated_at`.
+- Make the ordering deterministic for events with equal dates and equal priority, so pagination and snapshots do not depend on incidental insertion order.
+- Do not redesign the endpoint or add new sort fields.
 
-3. Avoid repeated overview status recomputation within one response
-- `get_overview_with_debug()` currently recomputes `_build_overview_status(...)` more than once for the same inputs.
-- Compute the overview rollup once and reuse it in the response payload and debug payload.
-- This is a small cleanup, but it should happen as part of the overview hardening change rather than as a standalone refactor.
+3. Expand normalization coverage with focused tests
+- Add regression tests for:
+  - duplicate same-day events from different sources collapsing to one event
+  - higher-priority source winning when duplicate candidates differ in normalized fields
+  - deterministic ordering for same-date events
+  - event normalization preserving expected taxonomy and importance semantics
+- Prefer unit/service-level tests and only add API coverage where it proves endpoint stability.
 
-4. Add focused regression tests for overview load behavior
-- Add tests that verify:
-  - overview assembly does not reload financials/prices/events a second time just to compute risk flags
-  - the overview debug response still exposes the same section structure and rollup status
-- Prefer unit/service-level tests over broad integration rewrites.
+4. Keep repository and API contracts stable
+- Do not change `/company/{ticker}/events` response fields.
+- Do not change the stable event taxonomy documented in `docs/stock-data-model.md`.
+- Do not broaden generic web research features while doing this work.
 
 ## Suggested Files
 
-- `app/api/routes.py`
-- `app/scripts/sync_stock.py`
+- `app/normalizers/stock.py`
 - `app/services/stock.py`
-- `app/db/sqlite.py`
-- `tests/test_stock_api.py`
+- `app/collectors/exchange_search.py`
+- `app/services/stock.py`
+- `tests/test_stock_normalizers.py`
 - `tests/test_stock_service.py`
-- `tests/test_sync_stock_script.py`
+- `tests/test_stock_api.py`
+- `docs/stock-data-model.md`
 
 ## Acceptance Checklist
 
-- `/health/sync` normalizes ticker filters consistently with the stock service.
-- `/health/sync?ticker=000001` can return sync rows stored under `000001.SZ`.
-- Overview assembly does not reload financials/prices/events solely to compute risk flags.
-- Overview response contract remains unchanged.
-- Overview debug payload still exposes the expected endpoint and sections.
-- Rollup status is computed once and reused during overview debug assembly.
+- Cross-source duplicate events are normalized more consistently.
+- Higher-priority sources still win after dedupe.
+- Event ordering is deterministic for same-date items.
+- `/company/{ticker}/events` contract remains unchanged.
+- Existing event taxonomy remains unchanged.
 - Existing endpoint paths and response field names remain unchanged.
 - Tests were run.
 

@@ -1,5 +1,6 @@
 from app.models.stock import CompanyProfile, Event
 from app.models.stock import FinancialSummary, PriceDaily
+from app.normalizers.stock import build_event_dedupe_key
 from app.services.stock import StockDataService
 
 
@@ -143,6 +144,99 @@ def test_event_dedupe_prefers_higher_priority_source() -> None:
     assert len(deduped) == 1
     assert deduped[0].source == "cninfo"
     assert deduped[0].event_type == "regulatory_action"
+
+
+def test_event_dedupe_collapses_cross_source_same_day_title_variants() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+    cninfo_event = Event(
+        event_id="cninfo-1",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "关于 2026 年报的公告", "2026-03-16", "https://static.cninfo.com.cn/a.pdf"),
+        ticker="000001.SZ",
+        event_date="2026-03-16",
+        title="关于 2026 年报的公告",
+        raw_title="关于 2026 年报的公告",
+        event_type="financial_report",
+        sentiment="neutral",
+        source_type="filing",
+        source="cninfo",
+        source_priority=100,
+        importance="high",
+    )
+    exchange_event = Event(
+        event_id="search-1",
+        dedupe_key=build_event_dedupe_key("000001.SZ", "关于2026年报的公告", "2026-03-16", "https://www.szse.cn/disclosure/b"),
+        ticker="000001.SZ",
+        event_date="2026-03-16",
+        title="关于2026年报的公告",
+        raw_title="关于2026年报的公告",
+        event_type="financial_report",
+        sentiment="neutral",
+        source_type="exchange_search",
+        source="exchange_search",
+        source_priority=60,
+        importance="high",
+    )
+
+    deduped = service._dedupe_events([exchange_event, cninfo_event], limit=10)
+
+    assert len(deduped) == 1
+    assert deduped[0].source == "cninfo"
+    assert deduped[0].title == "关于 2026 年报的公告"
+
+
+def test_event_dedupe_sorts_same_date_items_deterministically() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+    events = [
+        Event(
+            event_id="evt-b",
+            dedupe_key="dedupe-b",
+            ticker="000001.SZ",
+            event_date="2026-03-16",
+            title="B公告",
+            raw_title="B公告",
+            event_type="general_disclosure",
+            sentiment="neutral",
+            source_type="filing",
+            source="cninfo",
+            source_priority=100,
+            importance="medium",
+            updated_at="2026-03-16T09:00:00Z",
+        ),
+        Event(
+            event_id="evt-a",
+            dedupe_key="dedupe-a",
+            ticker="000001.SZ",
+            event_date="2026-03-16",
+            title="A公告",
+            raw_title="A公告",
+            event_type="general_disclosure",
+            sentiment="neutral",
+            source_type="filing",
+            source="cninfo",
+            source_priority=100,
+            importance="medium",
+            updated_at="2026-03-16T09:00:00Z",
+        ),
+        Event(
+            event_id="evt-z",
+            dedupe_key="dedupe-z",
+            ticker="000001.SZ",
+            event_date="2026-03-16",
+            title="Z公告",
+            raw_title="Z公告",
+            event_type="general_disclosure",
+            sentiment="neutral",
+            source_type="filing",
+            source="cninfo",
+            source_priority=100,
+            importance="high",
+            updated_at="2026-03-16T09:00:00Z",
+        ),
+    ]
+
+    ordered = service._dedupe_events(events, limit=10)
+
+    assert [item.event_id for item in ordered] == ["evt-z", "evt-a", "evt-b"]
 
 
 def test_build_overview_signals_returns_agent_ready_summary() -> None:

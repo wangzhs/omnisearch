@@ -325,7 +325,13 @@ class SQLiteRepository:
                 """
                 SELECT * FROM event
                 WHERE ticker = ?
-                ORDER BY COALESCE(event_date, '') DESC, updated_at DESC
+                ORDER BY
+                    COALESCE(event_date, '') DESC,
+                    CASE importance WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC,
+                    source_priority DESC,
+                    updated_at DESC,
+                    COALESCE(title, '') ASC,
+                    COALESCE(dedupe_key, event_id) ASC
                 LIMIT ?
                 """,
                 (ticker, limit),

@@ -1236,6 +1236,19 @@ class StockDataService:
             reverse=True,
         )[0]
 
+    def _event_importance_rank(self, event: Event) -> int:
+        importance_rank = {"high": 3, "medium": 2, "low": 1}
+        return importance_rank.get(event.importance, 0)
+
+    def _sort_events_for_output(self, events: list[Event]) -> list[Event]:
+        ordered = sorted(events, key=lambda item: item.dedupe_key or item.event_id or "")
+        ordered = sorted(ordered, key=lambda item: item.title or "")
+        ordered = sorted(ordered, key=lambda item: item.updated_at or "", reverse=True)
+        ordered = sorted(ordered, key=lambda item: item.source_priority or 0, reverse=True)
+        ordered = sorted(ordered, key=lambda item: self._event_importance_rank(item), reverse=True)
+        ordered = sorted(ordered, key=lambda item: item.event_date or "", reverse=True)
+        return ordered
+
     def _dedupe_events(self, events: list[Event], limit: int) -> list[Event]:
         deduped: dict[str, Event] = {}
         for event in events:
@@ -1249,11 +1262,14 @@ class StockDataService:
                 continue
             if event.source_priority == existing.source_priority and (event.updated_at or "") > (existing.updated_at or ""):
                 deduped[key] = event
-        return sorted(
-            deduped.values(),
-            key=lambda item: ((item.event_date or ""), item.importance or "", item.updated_at or ""),
-            reverse=True,
-        )[:limit]
+                continue
+            if (
+                event.source_priority == existing.source_priority
+                and (event.updated_at or "") == (existing.updated_at or "")
+                and (event.event_id or "") < (existing.event_id or "")
+            ):
+                deduped[key] = event
+        return self._sort_events_for_output(list(deduped.values()))[:limit]
 
     def _build_overview_signals(
         self,

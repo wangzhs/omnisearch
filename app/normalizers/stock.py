@@ -125,11 +125,21 @@ def should_replace_by_source_priority(current_source: str | None, candidate_sour
     return get_source_priority(candidate_source) >= get_source_priority(current_source)
 
 
+def normalize_event_title_for_dedupe(title: str) -> str:
+    normalized = (title or "").strip().lower()
+    normalized = re.sub(r"\s+", "", normalized)
+    normalized = re.sub(r"[《》【】\[\]()（）:：,，.。;；!！?？\"'`·\-_/\\\\]+", "", normalized)
+    return normalized
+
+
 def build_event_dedupe_key(ticker: str, title: str, event_date: str | None, url: str | None = None) -> str:
     normalized = normalize_ticker_input(ticker)
-    normalized_title = re.sub(r"\s+", " ", (title or "").strip().lower())
-    normalized_url = (url or "").strip().lower()
-    digest = hashlib.sha1(f"{normalized}|{event_date or ''}|{normalized_title}|{normalized_url}".encode("utf-8")).hexdigest()[:20]
+    normalized_title = normalize_event_title_for_dedupe(title)
+    normalized_url = normalize_source_url(url) or ""
+    dedupe_basis = f"{normalized}|{event_date or ''}|{normalized_title}"
+    if not normalized_title:
+        dedupe_basis = f"{dedupe_basis}|{normalized_url}"
+    digest = hashlib.sha1(dedupe_basis.encode("utf-8")).hexdigest()[:20]
     return f"{normalized}:{digest}"
 
 

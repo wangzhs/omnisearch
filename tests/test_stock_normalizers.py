@@ -5,6 +5,7 @@ from app.normalizers.stock import (
     normalize_event_importance,
     normalize_cninfo_event,
     normalize_event_sentiment,
+    normalize_event_title_for_dedupe,
     normalize_event_type,
     normalize_financial_summary,
     normalize_price_daily,
@@ -34,10 +35,20 @@ def test_event_normalization_applies_stable_taxonomy_and_sentiment() -> None:
 def test_event_dedupe_key_is_stable() -> None:
     key1 = build_event_dedupe_key("000001", "年度报告", "2026-03-16", "https://example.com/a.pdf")
     key2 = build_event_dedupe_key("000001.SZ", "年度报告", "2026-03-16", "https://example.com/a.pdf")
+    key3 = build_event_dedupe_key("000001.SZ", "年度报告", "2026-03-16", "https://example.com/b.pdf")
 
     assert key1 == key2
+    assert key1 == key3
     assert normalize_event_type("关于年报的公告") == "financial_report"
     assert normalize_event_sentiment("公司回购计划") == "positive"
+
+
+def test_event_dedupe_key_normalizes_title_variants() -> None:
+    key1 = build_event_dedupe_key("000001.SZ", "关于 2026 年报的公告", "2026-03-16")
+    key2 = build_event_dedupe_key("000001.SZ", "关于2026年报的公告", "2026-03-16")
+
+    assert key1 == key2
+    assert normalize_event_title_for_dedupe("关于 2026 年报的公告") == normalize_event_title_for_dedupe("关于2026年报的公告")
 
 
 def test_event_taxonomy_covers_general_and_regulatory_cases() -> None:
