@@ -21,62 +21,53 @@ Constraints:
 
 ## Current Task
 
-Stabilize `/health/sync` summary contract with explicit schema and documentation updates.
+Harden overview status and source-metadata helper consistency with minimal necessary changes.
 
 ### Scope
 
-1. Add an explicit response schema for `/health/sync`
-- Move the route away from an untyped `dict` response for this endpoint.
-- Add schema models for:
-  - sync row item
-  - sync summary
-  - sync response
+1. Tighten overview helper consistency in `StockDataService`
+- Review helper methods that construct overview-level `data_status` and section/source metadata.
+- Prefer small local fixes that make derived status assembly more consistent across overview sections.
 - Cover at least:
-  - `summary.status`
-  - `ok_count`
-  - `partial_count`
-  - `failed_count`
-  - `latest_degraded_dataset`
+  - overview-level status/source selection staying aligned with section statuses
+  - source metadata remaining present and shape-stable for derived sections
+  - helper behavior not depending on ad hoc route-level shaping
 
-2. Update stock API documentation for `/health/sync`
-- Document the new `summary` object in `docs/stock-api.md`.
-- Keep the documented semantics narrow and aligned with the implementation.
+2. Tighten focused service/API coverage around helper-driven behavior
+- Add or refine tests that exercise helper output through:
+  - service-level overview assembly
+  - `GET /company/{ticker}/overview?debug=true`
+- Prefer tests that guard status/source metadata consistency rather than broad snapshots.
 
-3. Tighten API/schema coverage for the summary contract
-- Add focused API tests for `/health/sync`.
-- Cover at least:
-  - response still serializes the same `items`
-  - `summary` shape matches the schema contract
-  - normalized ticker filtering still works
+3. Keep overview contract stable
+- Do not redesign overview response fields.
+- Do not change endpoint paths.
+- Do not broaden debug payload shape unless fixing a narrow inconsistency.
 
-4. Keep sync contract stable
-- Do not redesign existing `/health/sync` row fields.
-- Do not remove or rename `items`.
-- Keep the current summary semantics unchanged unless a narrow correction is required.
-- Do not change ticker normalization semantics unless fixing a narrow bug.
-- Do not churn snapshots unless a contract change is intentional.
+4. Update docs only if contract meaning changes
+- If helper changes alter observable overview semantics, update `docs/stock-api.md`.
+- Otherwise avoid doc churn.
 
 5. Keep scope narrow
 - Do not broaden generic web research features.
-- Focus on observability value, not feature expansion.
+- Focus on internal consistency hardening, not feature expansion.
 
 ## Suggested Files
 
-- `app/api/routes.py`
+- `app/services/stock.py`
 - `app/schemas/stock.py`
-- `docs/stock-api.md`
+- `tests/test_stock_service.py`
 - `tests/test_stock_api.py`
-- `tests/snapshots/`
+- `docs/stock-api.md`
 - `docs/codex-iteration-workflow.md`
 
 ## Acceptance Checklist
 
-- `/health/sync` has an explicit response schema.
-- Documentation reflects the current `summary` contract.
-- Existing `items` ordering and row fields remain unchanged.
-- Snapshots change only if the sync contract intentionally changed.
-- Existing sync response field names remain unchanged unless a bug fix requires a narrow correction.
+- Overview helper behavior is more internally consistent without expanding the API surface.
+- Service/API coverage protects overview status and source-metadata consistency.
+- Existing overview field names remain unchanged unless a bug fix requires a narrow correction.
 - Existing endpoint paths and response field names remain unchanged.
+- Docs change only if observable contract meaning changed.
 - Tests were run.
 
 ## Validation

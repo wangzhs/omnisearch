@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.schemas.stock import CompanyOverview, OverviewDebugResponse
+from app.schemas.stock import CompanyOverview, OverviewDebugResponse, SyncHealthResponse
 from app.normalizers.stock import normalize_price_daily
 from app.schemas.search import SearchResult
 
@@ -1242,6 +1242,7 @@ def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
+    SyncHealthResponse.model_validate(payload)
     assert payload["summary"] == {
         "status": "partial",
         "ok_count": 0,

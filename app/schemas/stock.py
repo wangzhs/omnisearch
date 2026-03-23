@@ -552,6 +552,64 @@ class OverviewDebugResponse(BaseModel):
     debug: StockEndpointDebug
 
 
+class SyncHealthRow(BaseModel):
+    dataset: str
+    ticker: str
+    status: Literal["ok", "partial", "failed"]
+    synced_at: str | None = None
+    last_synced_at: str | None = None
+    last_success_at: str | None = None
+    last_error_at: str | None = None
+    last_error_message: str | None = None
+    records_written: int = 0
+    duration_ms: int | None = None
+
+
+class SyncHealthSummary(BaseModel):
+    status: Literal["ok", "partial", "failed"]
+    ok_count: int = 0
+    partial_count: int = 0
+    failed_count: int = 0
+    latest_degraded_dataset: str | None = None
+
+
+class SyncHealthResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "ok",
+                "ticker": "000001.SZ",
+                "summary": {
+                    "status": "partial",
+                    "ok_count": 2,
+                    "partial_count": 1,
+                    "failed_count": 0,
+                    "latest_degraded_dataset": "event",
+                },
+                "items": [
+                    {
+                        "dataset": "company_profile",
+                        "ticker": "000001.SZ",
+                        "status": "ok",
+                        "synced_at": "2026-03-17T00:00:00Z",
+                        "last_synced_at": "2026-03-17T00:00:00Z",
+                        "last_success_at": "2026-03-17T00:00:00Z",
+                        "last_error_at": "2026-03-16T23:59:00Z",
+                        "last_error_message": "previous timeout",
+                        "records_written": 1,
+                        "duration_ms": 100,
+                    }
+                ],
+            }
+        }
+    )
+
+    status: Literal["ok"]
+    ticker: str | None = None
+    summary: SyncHealthSummary
+    items: list[SyncHealthRow] = Field(default_factory=list)
+
+
 class TimelineItem(BaseModel):
     date: str
     kind: str

@@ -157,6 +157,27 @@ Reports upstream configuration state without probing live connectivity. Current 
 
 Returns repository sync-state rows. Optional `ticker` is normalized to the canonical A-share ticker format before filtering.
 
+Top-level response shape:
+
+- `status`
+- `ticker`
+- `summary`
+- `items`
+
+`summary` fields:
+
+- `status`
+- `ok_count`
+- `partial_count`
+- `failed_count`
+- `latest_degraded_dataset`
+
+`summary.status` semantics:
+
+- `failed`: at least one sync row is `failed`
+- `partial`: no row failed, but at least one sync row is `partial`
+- `ok`: all returned rows are `ok`
+
 Each item can include:
 
 - `dataset`
@@ -171,3 +192,4 @@ Each item can include:
 - `duration_ms`
 
 `status` may be `ok`, `partial`, or `failed` depending on the last recorded sync outcome.
+`latest_degraded_dataset` names the most recent `partial` or `failed` dataset when one exists.

@@ -22,6 +22,7 @@ from app.schemas.stock import (
     RiskFlag,
     StockEndpointDebug,
     StockPaginationDebug,
+    SyncHealthResponse,
     TimelineItem,
 )
 from app.services.stock import get_stock_data_service
@@ -55,17 +56,17 @@ def health_sources() -> dict:
     }
 
 
-@router.get("/health/sync")
-def health_sync(ticker: str | None = None) -> dict:
+@router.get("/health/sync", response_model=SyncHealthResponse)
+def health_sync(ticker: str | None = None) -> SyncHealthResponse:
     service = get_stock_data_service()
     normalized_ticker = normalize_ticker_input(ticker) if ticker else None
     items = service.repository.list_sync_state(ticker=normalized_ticker)
-    return {
-        "status": "ok",
-        "ticker": normalized_ticker,
-        "summary": _build_sync_health_summary(items),
-        "items": items,
-    }
+    return SyncHealthResponse(
+        status="ok",
+        ticker=normalized_ticker,
+        summary=_build_sync_health_summary(items),
+        items=items,
+    )
 
 
 @router.post("/search", response_model=SearchResponse)
