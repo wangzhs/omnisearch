@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.core.config import settings
+from app.normalizers.stock import normalize_ticker_input
 from app.services.stock import get_stock_data_service
 
 DATASETS = ("company", "financials", "prices", "events", "overview")
@@ -46,6 +47,10 @@ def _log(verbose: bool, message: str) -> None:
 
 def _parse_tickers(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _normalize_tickers(raw: str) -> list[str]:
+    return [normalize_ticker_input(item) for item in _parse_tickers(raw)]
 
 
 def _should_sync_incrementally(service: Any, dataset: str, ticker: str) -> bool:
@@ -95,7 +100,7 @@ def _selected_datasets(args: argparse.Namespace) -> list[str]:
 
 def _dry_run_result(ticker: str, datasets: list[str], incremental: bool) -> dict[str, Any]:
     return {
-        "ticker": ticker,
+        "ticker": normalize_ticker_input(ticker),
         "status": "dry_run",
         "mode": "incremental" if incremental else "full",
         "summary": {
@@ -139,7 +144,18 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _dump_debug(value: Any) -> Any:
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [_dump_debug(item) for item in value]
+    return value
+
+
 def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: list[str]) -> dict[str, Any]:
+    ticker = normalize_ticker_input(ticker)
     result: dict[str, Any] = {
         "ticker": ticker,
         "status": "ok",
@@ -244,14 +260,15 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                     verbose=args.verbose,
                 )
                 result["price_count"] = len(prices_debug.items)
-                result["price_debug"] = [item.model_dump() for item in prices_debug.debug]
+                result["price_debug"] = _dump_debug(prices_debug.debug)
                 record_dataset("prices", "ok", count=len(prices_debug.items))
                 _record_sync_result(
                     service,
                     "prices",
                     ticker,
-                    success=True,
+                    success=prices_debug.data_status.status != "failed",
                     synced_at=_utc_now(),
+                    error_message=prices_debug.data_status.last_error_message or prices_debug.data_status.error_message,
                     records_written=len(prices_debug.items),
                     duration_ms=int((time.perf_counter() - started_at) * 1000),
                 )
@@ -277,14 +294,15 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
                     verbose=args.verbose,
                 )
                 result["event_count"] = len(events_debug.items)
-                result["event_debug"] = [item.model_dump() for item in events_debug.debug]
+                result["event_debug"] = _dump_debug(events_debug.debug)
                 record_dataset("events", "ok", count=len(events_debug.items))
                 _record_sync_result(
                     service,
                     "events",
                     ticker,
-                    success=True,
+                    success=events_debug.data_status.status != "failed",
                     synced_at=_utc_now(),
+                    error_message=events_debug.data_status.last_error_message or events_debug.data_status.error_message,
                     records_written=len(events_debug.items),
                     duration_ms=int((time.perf_counter() - started_at) * 1000),
                 )
@@ -355,7 +373,7 @@ def _sync_ticker(service: Any, ticker: str, args: argparse.Namespace, datasets: 
 def main() -> None:
     args = parse_args()
     service = get_stock_data_service()
-    tickers = _parse_tickers(args.tickers)
+    tickers = _normalize_tickers(args.tickers)
     datasets = _selected_datasets(args)
     if args.dry_run:
         results = [_dry_run_result(ticker, datasets, args.incremental) for ticker in tickers]

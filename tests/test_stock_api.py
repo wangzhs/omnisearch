@@ -18,6 +18,21 @@ def assert_matches_snapshot(name: str, payload: dict) -> None:
 
 class FakeStockService:
     @staticmethod
+    def _debug_payload(
+        endpoint: str,
+        *,
+        sources: list[dict] | None = None,
+        sections: dict | None = None,
+        pagination: dict | None = None,
+    ):
+        return {
+            "endpoint": endpoint,
+            "sources": sources or [],
+            "sections": sections or {},
+            "pagination": pagination,
+        }
+
+    @staticmethod
     def _data_status(
         source: str | None,
         *,
@@ -122,6 +137,10 @@ class FakeStockService:
             "ticker": "000001.SZ",
             "items": self.list_financials(ticker, limit=limit, refresh=refresh),
             "data_status": self._data_status("tushare", attempted_sources=["tushare"]),
+            "debug": self._debug_payload(
+                "financial_summary",
+                sources=[{"source": "tushare", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+            ),
         }
 
     def list_prices(
@@ -194,6 +213,47 @@ class FakeStockService:
             "ticker": "000001.SZ",
             "data": self.get_company(ticker, refresh=refresh),
             "data_status": self._data_status("tushare", attempted_sources=["tushare"]),
+            "debug": self._debug_payload(
+                "company_profile",
+                sources=[{"source": "tushare", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+            ),
+        }
+
+    def get_overview_with_debug(self, ticker: str, refresh: bool = False):
+        overview = self.get_overview(ticker, refresh=refresh)
+        return {
+            "ticker": "000001.SZ",
+            "data": overview,
+            "data_status": self._data_status("derived", attempted_sources=["derived"]),
+            "debug": self._debug_payload(
+                "company_overview",
+                sections={
+                    "company": {
+                        "data_status": overview["company"]["data_status"],
+                        "sources": [{"source": "tushare", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+                    },
+                    "latest_financial": {
+                        "data_status": overview["latest_financial"]["data_status"],
+                        "sources": [{"source": "tushare", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+                    },
+                    "latest_price": {
+                        "data_status": overview["latest_price"]["data_status"],
+                        "sources": [{"source": "akshare", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+                    },
+                    "recent_events": {
+                        "data_status": overview["recent_events"]["data_status"],
+                        "sources": [{"source": "cninfo", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+                    },
+                    "risk_flags": {
+                        "data_status": overview["risk_flags"]["data_status"],
+                        "sources": [{"source": "derived", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+                    },
+                    "signals": {
+                        "data_status": overview["signals"]["data_status"],
+                        "sources": [{"source": "derived", "status": "ok", "count": 1, "kept_count": 1, "error": None}],
+                    },
+                },
+            ),
         }
 
     def get_timeline(self, ticker: str, refresh: bool = False):
@@ -427,7 +487,25 @@ def test_company_debug_endpoint_returns_data_status(monkeypatch) -> None:
     assert payload["ticker"] == "000001.SZ"
     assert payload["data"]["source_priority"] == 100
     assert payload["data_status"]["status"] == "fresh"
+    assert payload["debug"]["endpoint"] == "company_profile"
+    assert payload["debug"]["sources"][0]["status"] == "ok"
     assert payload["data_status"]["source_metadata"]["selection_reason"] == "test-fixture"
+
+
+def test_company_overview_debug_is_main_observability_entrypoint(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: FakeStockService())
+
+    client = TestClient(app)
+    response = client.get("/company/000001/overview?debug=true")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ticker"] == "000001.SZ"
+    assert payload["data"]["ticker"] == "000001.SZ"
+    assert payload["data_status"]["source"] == "derived"
+    assert payload["debug"]["endpoint"] == "company_overview"
+    assert payload["debug"]["sections"]["latest_price"]["data_status"]["source"] == "akshare"
+    assert payload["debug"]["sections"]["recent_events"]["sources"][0]["source"] == "cninfo"
 
 
 def test_prices_fall_back_to_tushare_when_akshare_fails() -> None:
@@ -752,10 +830,13 @@ def test_prices_debug_endpoint_returns_source_status(monkeypatch) -> None:
                 "ticker": "002837.SZ",
                 "items": [],
                 "data_status": FakeStockService._data_status("tushare", fallback_used=True, attempted_sources=["akshare", "tushare"]),
-                "debug": [
-                    {"source": "akshare", "status": "error", "count": 0, "error": "empty reply"},
-                    {"source": "tushare", "status": "empty", "count": 0, "error": None},
-                ],
+                "debug": FakeStockService._debug_payload(
+                    "price_daily",
+                    sources=[
+                        {"source": "akshare", "status": "error", "count": 0, "kept_count": 0, "error": "empty reply"},
+                        {"source": "tushare", "status": "empty", "count": 0, "kept_count": 0, "error": None},
+                    ],
+                ),
             }
 
     monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: DebugStockService())
@@ -768,8 +849,10 @@ def test_prices_debug_endpoint_returns_source_status(monkeypatch) -> None:
     assert payload["ticker"] == "002837.SZ"
     assert payload["data_status"]["source_metadata"]["fallback_used"] is True
     assert payload["data_status"]["source_metadata"]["returned_sources"] == ["tushare"]
-    assert payload["debug"][0]["source"] == "akshare"
-    assert payload["debug"][1]["status"] == "empty"
+    assert payload["debug"]["endpoint"] == "price_daily"
+    assert payload["debug"]["sources"][0]["source"] == "akshare"
+    assert payload["debug"]["sources"][1]["status"] == "empty"
+    assert payload["debug"]["pagination"]["page"] == 1
 
 
 def test_events_debug_endpoint_returns_source_status(monkeypatch) -> None:
@@ -779,10 +862,13 @@ def test_events_debug_endpoint_returns_source_status(monkeypatch) -> None:
                 "ticker": "002837.SZ",
                 "items": [],
                 "data_status": FakeStockService._data_status("exchange_search", fallback_used=True, attempted_sources=["cninfo", "exchange_search"]),
-                "debug": [
-                    {"source": "cninfo", "status": "empty", "count": 0, "kept_count": 0, "error": None},
-                    {"source": "exchange_search", "status": "ok", "count": 12, "kept_count": 4, "error": None},
-                ],
+                "debug": FakeStockService._debug_payload(
+                    "event",
+                    sources=[
+                        {"source": "cninfo", "status": "empty", "count": 0, "kept_count": 0, "error": None},
+                        {"source": "exchange_search", "status": "ok", "count": 12, "kept_count": 4, "error": None},
+                    ],
+                ),
             }
 
     monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: DebugStockService())
@@ -795,8 +881,10 @@ def test_events_debug_endpoint_returns_source_status(monkeypatch) -> None:
     assert payload["ticker"] == "002837.SZ"
     assert payload["data_status"]["source_metadata"]["selected_source"] == "exchange_search"
     assert payload["data_status"]["source_metadata"]["returned_sources"] == ["exchange_search"]
-    assert payload["debug"][0]["source"] == "cninfo"
-    assert payload["debug"][1]["kept_count"] == 4
+    assert payload["debug"]["endpoint"] == "event"
+    assert payload["debug"]["sources"][0]["source"] == "cninfo"
+    assert payload["debug"]["sources"][1]["kept_count"] == 4
+    assert payload["debug"]["pagination"]["sort_by"] == "event_date"
 
 
 def test_event_endpoint_supports_filtering_and_pagination(monkeypatch) -> None:
@@ -898,6 +986,46 @@ def test_financials_endpoint_supports_filtering_sorting_and_pagination(monkeypat
     assert payload[0]["report_date"] == "2025-06-30"
 
 
+def test_financials_endpoint_supports_numeric_sorting(monkeypatch) -> None:
+    class FinancialStockService(FakeStockService):
+        def list_financials(self, ticker: str, limit: int = 8, refresh: bool = False):
+            return [
+                {
+                    "record_id": "a",
+                    "ticker": "000001.SZ",
+                    "report_date": "2025-12-31",
+                    "announcement_date": "2026-03-16",
+                    "report_type": "annual",
+                    "revenue": 100.0,
+                    "net_profit": 10.0,
+                    "source": "tushare",
+                    "source_priority": 100,
+                    "updated_at": "2026-03-17T00:00:00Z",
+                },
+                {
+                    "record_id": "b",
+                    "ticker": "000001.SZ",
+                    "report_date": "2025-09-30",
+                    "announcement_date": "2025-10-20",
+                    "report_type": "quarterly",
+                    "revenue": 90.0,
+                    "net_profit": 12.0,
+                    "source": "tushare",
+                    "source_priority": 100,
+                    "updated_at": "2025-10-21T00:00:00Z",
+                },
+            ]
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: FinancialStockService())
+    client = TestClient(app)
+
+    response = client.get("/company/000001/financials?sort_by=net_profit&sort_order=desc")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["record_id"] == "b"
+
+
 def test_financials_debug_endpoint_returns_data_status(monkeypatch) -> None:
     class FinancialDebugStockService(FakeStockService):
         def list_financials_with_debug(self, ticker: str, limit: int = 8, refresh: bool = False):
@@ -909,6 +1037,10 @@ def test_financials_debug_endpoint_returns_data_status(monkeypatch) -> None:
                     status="partial",
                     attempted_sources=["tushare"],
                     last_error_message="latest annual report retry pending",
+                ),
+                "debug": FakeStockService._debug_payload(
+                    "financial_summary",
+                    sources=[{"source": "tushare", "status": "partial", "count": 1, "kept_count": 1, "error": "latest annual report retry pending"}],
                 ),
             }
 
@@ -922,6 +1054,8 @@ def test_financials_debug_endpoint_returns_data_status(monkeypatch) -> None:
     assert payload["ticker"] == "000001.SZ"
     assert payload["data_status"]["status"] == "partial"
     assert payload["data_status"]["last_error_message"] == "latest annual report retry pending"
+    assert payload["debug"]["endpoint"] == "financial_summary"
+    assert payload["debug"]["sources"][0]["status"] == "partial"
     assert payload["items"][0]["source_priority"] == 100
 
 

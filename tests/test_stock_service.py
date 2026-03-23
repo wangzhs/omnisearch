@@ -263,6 +263,18 @@ def test_risk_flags_capture_drawdown_and_volatility() -> None:
     assert "recent_drawdown" in codes
 
 
+def test_risk_flag_status_propagates_partial_inputs() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+
+    risk_status = service._build_risk_flags_status(
+        financial_status=service._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True, partial=True, error_message="partial upstream"),
+        price_status=service._build_data_status(source="akshare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        event_status=service._build_data_status(source="cninfo", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+    )
+
+    assert risk_status.status == "partial"
+
+
 def test_runtime_sync_recording_covers_all_primary_datasets() -> None:
     recorded = []
 
@@ -390,6 +402,63 @@ def test_prices_choose_highest_priority_runtime_source() -> None:
     assert [item.source for item in debug] == ["akshare", "tushare"]
 
 
+def test_prices_successful_refresh_uses_new_updated_at_and_preserves_partial_sync_state() -> None:
+    recorded = []
+
+    class FakeRepository:
+        def __init__(self):
+            self.prices = []
+
+        def list_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return self.prices
+
+        def upsert_prices(self, ticker: str, prices):
+            self.prices = [
+                PriceDaily(
+                    ticker=price.ticker,
+                    trade_date=price.trade_date,
+                    dedupe_key=price.dedupe_key,
+                    close=price.close,
+                    source=price.source,
+                    source_priority=price.source_priority,
+                    updated_at="2099-03-20T00:00:00Z",
+                )
+                for price in prices
+            ]
+            return self.prices
+
+        def get_last_synced_at(self, dataset: str, ticker: str):
+            return "2026-03-10T00:00:00Z"
+
+        def get_sync_state(self, dataset: str, ticker: str):
+            return {"status": "ok", "last_synced_at": "2026-03-10T00:00:00Z", "last_success_at": "2026-03-10T00:00:00Z", "last_error_at": None, "last_error_message": None}
+
+        def record_sync_result(self, dataset: str, ticker: str, synced_at: str, **kwargs):
+            recorded.append({"dataset": dataset, **kwargs})
+
+    class FakeAKShareCollector:
+        def fetch_daily_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            return [{"trade_date": "20260320", "close": 10.1, "source": "akshare"}]
+
+    class BrokenTushareCollector:
+        def fetch_daily_prices(self, ticker: str, limit: int = 60, start_date=None, end_date=None):
+            raise RuntimeError("tushare timeout")
+
+    service = StockDataService(
+        repository=FakeRepository(),
+        akshare_collector=FakeAKShareCollector(),
+        tushare_collector=BrokenTushareCollector(),
+    )
+
+    prices, status, _ = service._load_prices("000001.SZ", refresh=True)
+
+    assert prices[0].updated_at == "2099-03-20T00:00:00Z"
+    assert status.updated_at == "2099-03-20T00:00:00Z"
+    assert status.status == "partial"
+    assert recorded[0]["success"] is True
+    assert recorded[0]["error_message"] == "tushare timeout"
+
+
 def test_events_expose_mixed_source_metadata_after_runtime_aggregation() -> None:
     class FakeRepository:
         def __init__(self):
@@ -459,3 +528,81 @@ def test_events_expose_mixed_source_metadata_after_runtime_aggregation() -> None
     assert status.source_metadata.selected_source == "cninfo"
     assert "cninfo" in status.source_metadata.returned_sources
     assert "exchange_search" in status.source_metadata.returned_sources
+
+
+def test_events_successful_refresh_uses_new_updated_at_and_preserves_partial_sync_state() -> None:
+    recorded = []
+
+    class FakeRepository:
+        def __init__(self):
+            self.events = []
+
+        def list_events(self, ticker: str, limit: int = 20):
+            return self.events
+
+        def upsert_events(self, ticker: str, events):
+            self.events = [
+                Event(
+                    event_id=event.event_id,
+                    dedupe_key=event.dedupe_key,
+                    ticker=event.ticker,
+                    event_date=event.event_date,
+                    title=event.title,
+                    raw_title=event.raw_title,
+                    event_type=event.event_type,
+                    category=event.category,
+                    sentiment=event.sentiment,
+                    source_type=event.source_type,
+                    source=event.source,
+                    source_priority=event.source_priority,
+                    url=event.url,
+                    source_url=event.source_url,
+                    summary=event.summary,
+                    importance=event.importance,
+                    updated_at="2099-03-20T00:00:00Z",
+                )
+                for event in events
+            ]
+            return self.events
+
+        def replace_events(self, ticker: str, events):
+            return self.upsert_events(ticker, events)
+
+        def get_last_synced_at(self, dataset: str, ticker: str):
+            return "2026-03-10T00:00:00Z"
+
+        def get_sync_state(self, dataset: str, ticker: str):
+            return {"status": "ok", "last_synced_at": "2026-03-10T00:00:00Z", "last_success_at": "2026-03-10T00:00:00Z", "last_error_at": None, "last_error_message": None}
+
+        def get_company_profile(self, ticker: str):
+            return None
+
+        def upsert_company_profile(self, profile):
+            return profile
+
+        def record_sync_result(self, dataset: str, ticker: str, synced_at: str, **kwargs):
+            recorded.append({"dataset": dataset, **kwargs})
+
+    class FakeCNInfoCollector:
+        def fetch_events(self, ticker: str, limit: int = 20):
+            return [{"announcementTitle": "关于年报的公告", "announcementTime": "2026-03-20", "adjunctUrl": "finalpage/test.pdf"}]
+
+    class BrokenExchangeSearchCollector:
+        def fetch_events_with_debug(self, ticker: str, company_name: str | None = None, limit: int = 10):
+            raise RuntimeError("exchange search timeout")
+
+    service = StockDataService(
+        repository=FakeRepository(),
+        cninfo_collector=FakeCNInfoCollector(),
+        exchange_search_collector=BrokenExchangeSearchCollector(),
+        tushare_collector=type("FakeTushareCollector", (), {"fetch_company_profile": lambda self, ticker: {"basic": {"name": "平安银行"}, "company": {}}})(),
+    )
+
+    events, status, _ = service._load_events("000001.SZ", refresh=True)
+
+    assert events[0].updated_at == "2099-03-20T00:00:00Z"
+    assert status.updated_at == "2099-03-20T00:00:00Z"
+    assert status.status == "partial"
+    event_record = next(item for item in recorded if item["dataset"] == "event")
+    assert event_record["success"] is True
+    assert event_record["error_message"] == "exchange search timeout"

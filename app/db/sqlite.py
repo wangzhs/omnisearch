@@ -497,8 +497,9 @@ class SQLiteRepository:
                 (dataset, ticker),
             ).fetchone()
             last_success_at = synced_at if success else (existing["last_success_at"] if existing else None)
-            last_error_at = None if success else synced_at
-            last_error_message = None if success else error_message
+            degraded_success = bool(success and error_message)
+            last_error_at = synced_at if (degraded_success or not success) else None
+            last_error_message = error_message if (degraded_success or not success) else None
             connection.execute(
                 """
                 INSERT INTO sync_state (
@@ -655,8 +656,10 @@ class SQLiteRepository:
         last_error_at = row["last_error_at"]
         if last_error_at and not last_success_at:
             status = "failed"
-        elif last_error_at and last_success_at and last_error_at >= last_success_at:
+        elif last_error_at and last_success_at and last_error_at > last_success_at:
             status = "failed"
+        elif last_error_at and last_success_at and last_error_at == last_success_at:
+            status = "partial"
         elif last_error_at and last_success_at:
             status = "partial"
         else:

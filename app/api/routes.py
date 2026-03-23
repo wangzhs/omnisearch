@@ -11,6 +11,7 @@ from app.schemas.search import SearchRequest, SearchResponse, SearchResult
 from app.schemas.stock import (
     CompanyDebugResponse,
     CompanyOverview,
+    OverviewDebugResponse,
     CompanyProfile,
     EventListDebugResponse,
     Event,
@@ -19,6 +20,8 @@ from app.schemas.stock import (
     PriceDaily,
     PriceListDebugResponse,
     RiskFlag,
+    StockEndpointDebug,
+    StockPaginationDebug,
     TimelineItem,
 )
 from app.services.stock import get_stock_data_service
@@ -188,17 +191,25 @@ def get_company_events(
     try:
         if debug:
             payload = get_stock_data_service().list_events_with_debug(ticker, limit=max(limit, page * page_size), refresh=refresh)
+            filtered = _filter_events(_get_payload_items(payload), event_type=event_type, importance=importance, source=source, sentiment=sentiment)
             items = _paginate_events(
-                _filter_events(_get_payload_items(payload), event_type=event_type, importance=importance, source=source, sentiment=sentiment),
+                filtered,
                 sort_by=sort_by,
                 sort_order=sort_order,
                 page=page,
                 page_size=page_size,
             )
-            if isinstance(payload, dict):
-                payload["items"] = items
-            else:
-                payload.items = items
+            _set_payload_items(payload, items)
+            _set_payload_debug_pagination(
+                payload,
+                limit=limit,
+                page=page,
+                page_size=page_size,
+                returned_items=len(items),
+                total_items=len(filtered),
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
             return payload
         items = get_stock_data_service().list_events(ticker, limit=max(limit, page * page_size), refresh=refresh)
         return _paginate_events(
@@ -221,28 +232,36 @@ def get_company_financials(
     refresh: bool = False,
     debug: bool = False,
     report_type: str | None = None,
+    sort_by: str = Query(default="report_date", pattern="^(report_date|announcement_date|revenue|net_profit)$"),
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=8, ge=1, le=100),
-    ) -> list[FinancialSummary] | FinancialListDebugResponse:
+) -> list[FinancialSummary] | FinancialListDebugResponse:
     try:
         service = get_stock_data_service()
         if debug:
             payload = service.list_financials_with_debug(ticker, limit=max(limit, page * page_size), refresh=refresh)
-            items = _get_payload_items(payload)
+            filtered = _get_payload_items(payload)
             if report_type:
-                items = [item for item in items if _item_value(item, "report_type") == report_type]
-            items = sorted(items, key=lambda item: _item_value(item, "report_date") or "", reverse=(sort_order == "desc"))
-            items = _paginate_list(items, page=page, page_size=page_size)
-            if isinstance(payload, dict):
-                payload["items"] = items
-            else:
-                payload.items = items
+                filtered = [item for item in filtered if _item_value(item, "report_type") == report_type]
+            ordered = sorted(filtered, key=lambda item: _sort_value(_item_value(item, sort_by)), reverse=(sort_order == "desc"))
+            items = _paginate_list(ordered, page=page, page_size=page_size)
+            _set_payload_items(payload, items)
+            _set_payload_debug_pagination(
+                payload,
+                limit=limit,
+                page=page,
+                page_size=page_size,
+                returned_items=len(items),
+                total_items=len(filtered),
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
             return payload
         items = service.list_financials(ticker, limit=max(limit, page * page_size), refresh=refresh)
         if report_type:
             items = [item for item in items if _item_value(item, "report_type") == report_type]
-        items = sorted(items, key=lambda item: _item_value(item, "report_date") or "", reverse=(sort_order == "desc"))
+        items = sorted(items, key=lambda item: _sort_value(_item_value(item, sort_by)), reverse=(sort_order == "desc"))
         return _paginate_list(items, page=page, page_size=page_size)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -273,16 +292,24 @@ def get_company_prices(
                 end_date=end_date,
                 refresh=refresh,
             )
+            filtered = _filter_prices(_get_payload_items(payload), min_change_pct=min_change_pct, max_change_pct=max_change_pct)
             items = _paginate_prices(
-                _filter_prices(_get_payload_items(payload), min_change_pct=min_change_pct, max_change_pct=max_change_pct),
+                filtered,
                 sort_order=sort_order,
                 page=page,
                 page_size=page_size,
             )
-            if isinstance(payload, dict):
-                payload["items"] = items
-            else:
-                payload.items = items
+            _set_payload_items(payload, items)
+            _set_payload_debug_pagination(
+                payload,
+                limit=limit,
+                page=page,
+                page_size=page_size,
+                returned_items=len(items),
+                total_items=len(filtered),
+                sort_by="trade_date",
+                sort_order=sort_order,
+            )
             return payload
         items = get_stock_data_service().list_prices(
             ticker,
@@ -305,7 +332,7 @@ def get_company_prices(
 
 @router.get(
     "/company/{ticker}/overview",
-    response_model=CompanyOverview,
+    response_model=CompanyOverview | OverviewDebugResponse,
     responses={
         200: {
             "description": "Stable A-share company overview contract with per-section data status.",
@@ -376,9 +403,12 @@ def get_company_prices(
         }
     },
 )
-def get_company_overview(ticker: str, refresh: bool = False) -> CompanyOverview:
+def get_company_overview(ticker: str, refresh: bool = False, debug: bool = False) -> CompanyOverview | OverviewDebugResponse:
     try:
-        return get_stock_data_service().get_overview(ticker, refresh=refresh)
+        service = get_stock_data_service()
+        if debug:
+            return service.get_overview_with_debug(ticker, refresh=refresh)
+        return service.get_overview(ticker, refresh=refresh)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -451,6 +481,47 @@ def _paginate_prices(items: list[PriceDaily], sort_order: str, page: int, page_s
     return _paginate_list(ordered, page=page, page_size=page_size)
 
 
+def _set_payload_items(payload, items: list) -> None:
+    if isinstance(payload, dict):
+        payload["items"] = items
+        return
+    payload.items = items
+
+
+def _set_payload_debug_pagination(
+    payload,
+    *,
+    limit: int,
+    page: int,
+    page_size: int,
+    returned_items: int,
+    total_items: int,
+    sort_by: str,
+    sort_order: str,
+) -> None:
+    debug = payload["debug"] if isinstance(payload, dict) else payload.debug
+    if isinstance(debug, dict):
+        debug["pagination"] = {
+            "limit": limit,
+            "page": page,
+            "page_size": page_size,
+            "returned_items": returned_items,
+            "total_items": total_items,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        }
+        return
+    debug.pagination = StockPaginationDebug(
+        limit=limit,
+        page=page,
+        page_size=page_size,
+        returned_items=returned_items,
+        total_items=total_items,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+
 def _paginate_list(items: list, page: int, page_size: int) -> list:
     start = (page - 1) * page_size
     end = start + page_size
@@ -467,3 +538,9 @@ def _item_value(item, field: str):
     if isinstance(item, dict):
         return item.get(field)
     return getattr(item, field)
+
+
+def _sort_value(value):
+    if value is None:
+        return ""
+    return value

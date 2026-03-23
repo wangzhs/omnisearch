@@ -29,9 +29,12 @@ from app.schemas.stock import (
     EventListDebugResponse,
     EventSourceDebug,
     FinancialListDebugResponse,
+    OverviewDebugResponse,
     PriceListDebugResponse,
     PriceSourceDebug,
     RiskFlag,
+    StockEndpointDebug,
+    StockSectionDebug,
     SourceMetadata,
     StockResearchContext,
     TimelineItem,
@@ -63,7 +66,16 @@ class StockDataService:
     def get_company_with_debug(self, ticker: str, refresh: bool = False) -> CompanyDebugResponse:
         normalized = normalize_ticker_input(ticker)
         company, data_status = self._load_company(normalized, refresh=refresh)
-        return CompanyDebugResponse(ticker=normalized, data=company, data_status=data_status)
+        return CompanyDebugResponse(
+            ticker=normalized,
+            data=company,
+            data_status=data_status,
+            debug=self._build_endpoint_debug(
+                endpoint="company_profile",
+                data_status=data_status,
+                sources=self._build_data_status_sources_debug(data_status, item_count=1 if company else 0),
+            ),
+        )
 
     def list_events(self, ticker: str, limit: int = 20, refresh: bool = False) -> list[Event]:
         return self.list_events_with_debug(ticker=ticker, limit=limit, refresh=refresh).items
@@ -71,7 +83,12 @@ class StockDataService:
     def list_events_with_debug(self, ticker: str, limit: int = 20, refresh: bool = False) -> EventListDebugResponse:
         normalized = normalize_ticker_input(ticker)
         events, data_status, debug = self._load_events(normalized, limit=limit, refresh=refresh)
-        return EventListDebugResponse(ticker=normalized, items=events, data_status=data_status, debug=debug)
+        return EventListDebugResponse(
+            ticker=normalized,
+            items=events,
+            data_status=data_status,
+            debug=self._build_endpoint_debug(endpoint="event", data_status=data_status, sources=debug),
+        )
 
     def list_financials(self, ticker: str, limit: int = 8, refresh: bool = False) -> list[FinancialSummary]:
         items, _ = self._load_financials(normalize_ticker_input(ticker), limit=limit, refresh=refresh)
@@ -80,7 +97,16 @@ class StockDataService:
     def list_financials_with_debug(self, ticker: str, limit: int = 8, refresh: bool = False) -> FinancialListDebugResponse:
         normalized = normalize_ticker_input(ticker)
         items, data_status = self._load_financials(normalized, limit=limit, refresh=refresh)
-        return FinancialListDebugResponse(ticker=normalized, items=items, data_status=data_status)
+        return FinancialListDebugResponse(
+            ticker=normalized,
+            items=items,
+            data_status=data_status,
+            debug=self._build_endpoint_debug(
+                endpoint="financial_summary",
+                data_status=data_status,
+                sources=self._build_data_status_sources_debug(data_status, item_count=len(items)),
+            ),
+        )
 
     def list_prices(
         self,
@@ -115,14 +141,22 @@ class StockDataService:
             end_date=end_date,
             refresh=refresh,
         )
-        return PriceListDebugResponse(ticker=normalized, items=prices, data_status=data_status, debug=debug)
+        return PriceListDebugResponse(
+            ticker=normalized,
+            items=prices,
+            data_status=data_status,
+            debug=self._build_endpoint_debug(endpoint="price_daily", data_status=data_status, sources=debug),
+        )
 
     def get_overview(self, ticker: str, refresh: bool = False) -> CompanyOverview:
+        return self.get_overview_with_debug(ticker, refresh=refresh).data
+
+    def get_overview_with_debug(self, ticker: str, refresh: bool = False) -> OverviewDebugResponse:
         normalized = normalize_ticker_input(ticker)
         company, company_status = self._load_company(normalized, refresh=refresh)
         financials, financial_status = self._load_financials(normalized, limit=4, refresh=refresh)
-        prices, price_status, _ = self._load_prices(normalized, limit=30, refresh=refresh)
-        events, event_status, _ = self._load_events(normalized, limit=5, refresh=refresh)
+        prices, price_status, price_debug = self._load_prices(normalized, limit=30, refresh=refresh)
+        events, event_status, event_debug = self._load_events(normalized, limit=5, refresh=refresh)
         latest_financial = financials[0] if financials else None
         latest_price = prices[-1] if prices else None
         risk_flags = self.get_risk_flags(ticker, refresh=refresh)
@@ -137,7 +171,7 @@ class StockDataService:
             recent_events=events,
             risk_flags=risk_flags,
         )
-        return CompanyOverview(
+        overview = CompanyOverview(
             ticker=normalized,
             company=CompanyOverviewCompanySection(
                 data=company or self._build_placeholder_company(normalized),
@@ -148,6 +182,35 @@ class StockDataService:
             recent_events=CompanyOverviewEventsSection(data=events, data_status=event_status),
             risk_flags=CompanyOverviewRiskFlagsSection(data=risk_flags, data_status=risk_status),
             signals=CompanyOverviewSignalsSection(data=signals, data_status=risk_status),
+        )
+        return OverviewDebugResponse(
+            ticker=normalized,
+            data=overview,
+            data_status=self._build_overview_status(
+                company_status=company_status,
+                financial_status=financial_status,
+                price_status=price_status,
+                event_status=event_status,
+                risk_status=risk_status,
+            ),
+            debug=self._build_endpoint_debug(
+                endpoint="company_overview",
+                data_status=self._build_overview_status(
+                    company_status=company_status,
+                    financial_status=financial_status,
+                    price_status=price_status,
+                    event_status=event_status,
+                    risk_status=risk_status,
+                ),
+                sections={
+                    "company": self._build_section_debug(company_status, self._build_data_status_sources_debug(company_status, item_count=1 if company else 0)),
+                    "latest_financial": self._build_section_debug(financial_status, self._build_data_status_sources_debug(financial_status, item_count=1 if latest_financial else 0)),
+                    "latest_price": self._build_section_debug(price_status, price_debug),
+                    "recent_events": self._build_section_debug(event_status, event_debug),
+                    "risk_flags": self._build_section_debug(risk_status, self._build_data_status_sources_debug(risk_status, item_count=len(risk_flags))),
+                    "signals": self._build_section_debug(risk_status, self._build_data_status_sources_debug(risk_status, item_count=len(signals))),
+                },
+            ),
         )
 
     def get_timeline(self, ticker: str, refresh: bool = False) -> list[TimelineItem]:
@@ -529,7 +592,7 @@ class StockDataService:
                     returned_sources=[items[-1].source],
                     selection_reason="cache_hit",
                 ),
-            ), [PriceSourceDebug(source="cache", status="hit", count=len(items))]
+            ), [PriceSourceDebug(source="cache", status="hit", count=len(items), kept_count=len(items))]
 
         debug: list[PriceSourceDebug] = []
         raw_prices_by_source: dict[str, list[dict]] = {}
@@ -541,10 +604,17 @@ class StockDataService:
             try:
                 raw_prices = collector(ticker, limit=limit, start_date=start_date, end_date=end_date)
                 raw_prices_by_source[source_name] = raw_prices
-                debug.append(PriceSourceDebug(source=source_name, status="ok" if raw_prices else "empty", count=len(raw_prices)))
+                debug.append(
+                    PriceSourceDebug(
+                        source=source_name,
+                        status="ok" if raw_prices else "empty",
+                        count=len(raw_prices),
+                        kept_count=len(raw_prices),
+                    )
+                )
             except RuntimeError as exc:
                 last_error = str(exc)
-                debug.append(PriceSourceDebug(source=source_name, status="error", count=0, error=last_error))
+                debug.append(PriceSourceDebug(source=source_name, status="error", count=0, kept_count=0, error=last_error))
         selected_source = self._select_runtime_source(
             [source_name for source_name, rows in raw_prices_by_source.items() if rows]
         )
@@ -555,6 +625,7 @@ class StockDataService:
                 "price_daily",
                 ticker,
                 success=True,
+                error_message=last_error,
                 records_written=len(prices),
                 started_at=started_at,
             )
@@ -564,8 +635,10 @@ class StockDataService:
             returned_sources = list(raw_prices_by_source)
             return latest, self._build_data_status(
                 source=selected_source,
-                updated_at=last_synced_at or latest[-1].updated_at,
+                updated_at=latest[-1].updated_at or self._sync_state_value(self._get_sync_state("price_daily", ticker), "last_synced_at"),
                 cache_hit=False,
+                error_message=last_error,
+                partial=bool(last_error),
                 sync_state=self._get_sync_state("price_daily", ticker),
                 source_metadata=self._build_source_metadata(
                     selected_source,
@@ -720,6 +793,7 @@ class StockDataService:
                 "event",
                 ticker,
                 success=True,
+                error_message=error_message,
                 records_written=len(deduped),
                 started_at=started_at,
             )
@@ -729,7 +803,7 @@ class StockDataService:
             returned_sources = self._event_sources(latest)
             return latest, self._build_data_status(
                 source=selected_source,
-                updated_at=last_synced_at or latest[0].updated_at,
+                updated_at=latest[0].updated_at or self._sync_state_value(self._get_sync_state("event", ticker), "last_synced_at"),
                 cache_hit=False,
                 error_message=error_message,
                 partial=bool(error_message),
@@ -906,6 +980,105 @@ class StockDataService:
             source_metadata=source_metadata,
         )
 
+    def _build_endpoint_debug(
+        self,
+        *,
+        endpoint: str,
+        data_status: DataStatus,
+        sources: list[PriceSourceDebug] | None = None,
+        sections: dict[str, StockSectionDebug] | None = None,
+    ) -> StockEndpointDebug:
+        return StockEndpointDebug(
+            endpoint=endpoint,
+            sources=sources or [],
+            sections=sections or {},
+        )
+
+    def _build_section_debug(self, data_status: DataStatus, sources: list[PriceSourceDebug] | None = None) -> StockSectionDebug:
+        return StockSectionDebug(data_status=data_status, sources=sources or [])
+
+    def _build_data_status_sources_debug(self, data_status: DataStatus, item_count: int = 0) -> list[PriceSourceDebug]:
+        source_name = data_status.source or (data_status.source_metadata.selected_source if data_status.source_metadata else None)
+        if not source_name and data_status.status == "missing":
+            source_name = "unavailable"
+        if source_name is None:
+            return []
+        return [
+            PriceSourceDebug(
+                source=source_name,
+                status=self._debug_status_from_data_status(data_status),
+                count=item_count,
+                kept_count=item_count,
+                error=data_status.last_error_message or data_status.error_message,
+            )
+        ]
+
+    def _debug_status_from_data_status(self, data_status: DataStatus) -> str:
+        mapping = {
+            "fresh": "ok",
+            "partial": "partial",
+            "stale": "stale",
+            "missing": "missing",
+            "failed": "error",
+        }
+        return mapping.get(data_status.status, data_status.status)
+
+    def _build_overview_status(
+        self,
+        *,
+        company_status: DataStatus,
+        financial_status: DataStatus,
+        price_status: DataStatus,
+        event_status: DataStatus,
+        risk_status: DataStatus,
+    ) -> DataStatus:
+        statuses = [company_status, financial_status, price_status, event_status, risk_status]
+        if any(item.status == "failed" for item in statuses):
+            selected = next(item for item in statuses if item.status == "failed")
+            return self._build_data_status(
+                source="derived",
+                updated_at=selected.updated_at,
+                cache_hit=True,
+                error_message=selected.error_message or selected.last_error_message,
+                failed=True,
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+            )
+        if any(item.status == "stale" for item in statuses):
+            selected = next(item for item in statuses if item.status == "stale")
+            return self._build_data_status(
+                source="derived",
+                updated_at=selected.updated_at,
+                cache_hit=True,
+                error_message=selected.error_message,
+                partial=any(item.status == "partial" for item in statuses),
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+            )
+        if any(item.status == "partial" for item in statuses):
+            selected = next(item for item in statuses if item.status == "partial")
+            return self._build_data_status(
+                source="derived",
+                updated_at=selected.updated_at,
+                cache_hit=True,
+                error_message=selected.error_message or selected.last_error_message,
+                partial=True,
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+            )
+        if all(item.status == "missing" for item in statuses):
+            return self._build_data_status(
+                source="derived",
+                updated_at=None,
+                cache_hit=True,
+                missing=True,
+                source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+            )
+        latest_updated_at = max((item.updated_at for item in statuses if item.updated_at), default=None)
+        return self._build_data_status(
+            source="derived",
+            updated_at=latest_updated_at,
+            cache_hit=True,
+            source_metadata=self._build_source_metadata("derived", attempted_sources=["derived"], returned_sources=["derived"], selection_reason="overview_rollup"),
+        )
+
     def _build_risk_flags_status(
         self,
         financial_status: DataStatus,
@@ -920,6 +1093,8 @@ class StockDataService:
             status = "failed"
         elif "stale" in component_statuses:
             status = "stale"
+        elif "partial" in component_statuses:
+            status = "partial"
         else:
             status = "fresh"
         return DataStatus(

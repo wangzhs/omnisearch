@@ -370,41 +370,69 @@ class PriceSourceDebug(BaseModel):
     source: str
     status: str
     count: int = 0
+    kept_count: int = 0
     error: str | None = None
+
+
+class StockPaginationDebug(BaseModel):
+    limit: int | None = None
+    page: int | None = None
+    page_size: int | None = None
+    returned_items: int = 0
+    total_items: int = 0
+    sort_by: str | None = None
+    sort_order: str | None = None
+
+
+class StockSectionDebug(BaseModel):
+    data_status: DataStatus
+    sources: list[PriceSourceDebug] = Field(default_factory=list)
+
+
+class StockEndpointDebug(BaseModel):
+    endpoint: str
+    sources: list[PriceSourceDebug] = Field(default_factory=list)
+    pagination: StockPaginationDebug | None = None
+    sections: dict[str, StockSectionDebug] = Field(default_factory=dict)
 
 
 class PriceListDebugResponse(BaseModel):
     ticker: str
     items: list[PriceDaily] = Field(default_factory=list)
     data_status: DataStatus
-    debug: list[PriceSourceDebug] = Field(default_factory=list)
+    debug: StockEndpointDebug
 
 
-class EventSourceDebug(BaseModel):
-    source: str
-    status: str
-    count: int = 0
-    kept_count: int = 0
-    error: str | None = None
+class EventSourceDebug(PriceSourceDebug):
+    pass
 
 
 class EventListDebugResponse(BaseModel):
     ticker: str
     items: list[Event] = Field(default_factory=list)
     data_status: DataStatus
-    debug: list[EventSourceDebug] = Field(default_factory=list)
+    debug: StockEndpointDebug
 
 
 class CompanyDebugResponse(BaseModel):
     ticker: str
     data: CompanyProfile | None = None
     data_status: DataStatus
+    debug: StockEndpointDebug
 
 
 class FinancialListDebugResponse(BaseModel):
     ticker: str
     items: list[FinancialSummary] = Field(default_factory=list)
     data_status: DataStatus
+    debug: StockEndpointDebug
+
+
+class OverviewDebugResponse(BaseModel):
+    ticker: str
+    data: CompanyOverview
+    data_status: DataStatus
+    debug: StockEndpointDebug
 
 
 class TimelineItem(BaseModel):
