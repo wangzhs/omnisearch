@@ -37,27 +37,29 @@ class CompanyProfile(BaseModel):
 
 
 class SourceMetadata(BaseModel):
-    selected_source: str | None = None
-    selected_source_priority: int | None = None
-    fallback_used: bool = False
-    attempted_sources: list[str] = Field(default_factory=list)
-    returned_sources: list[str] = Field(default_factory=list)
-    selection_reason: str | None = None
-    fallback_reason: str | None = None
+    selected_source: str | None = Field(default=None, description="Runtime-selected primary source used for the response payload.")
+    selected_source_priority: int | None = Field(default=None, description="Priority score of the selected source after runtime source evaluation.")
+    fallback_used: bool = Field(default=False, description="Whether the chosen source was a fallback from the first attempted source.")
+    attempted_sources: list[str] = Field(default_factory=list, description="Sources attempted during fetch or cache evaluation, in attempt order.")
+    returned_sources: list[str] = Field(default_factory=list, description="Sources that contributed rows to the final payload after normalization and dedupe.")
+    selection_reason: str | None = Field(default=None, description="Short explanation of why the selected source won at runtime.")
+    fallback_reason: str | None = Field(default=None, description="Reason fallback behavior was used, usually upstream degradation or source-priority selection.")
 
 
 class DataStatus(BaseModel):
-    status: Literal["fresh", "partial", "stale", "missing", "failed"]
-    updated_at: str | None = None
-    source: str | None = None
-    ttl_hours: int
-    cache_hit: bool = False
-    error_message: str | None = None
-    last_synced_at: str | None = None
-    last_success_at: str | None = None
-    last_error_at: str | None = None
-    last_error_message: str | None = None
-    source_metadata: SourceMetadata | None = None
+    status: Literal["fresh", "partial", "stale", "missing", "failed"] = Field(
+        description="Section data status. 'partial' means usable data exists but at least one upstream source degraded or failed during refresh."
+    )
+    updated_at: str | None = Field(default=None, description="Timestamp of the data currently returned for this section.")
+    source: str | None = Field(default=None, description="Selected primary source for the returned section payload.")
+    ttl_hours: int = Field(description="Time-to-live used to evaluate fresh versus stale cache state.")
+    cache_hit: bool = Field(default=False, description="Whether the response was satisfied from cached repository data.")
+    error_message: str | None = Field(default=None, description="High-level fetch error associated with the current response, if any.")
+    last_synced_at: str | None = Field(default=None, description="Most recent attempted sync timestamp recorded for this dataset.")
+    last_success_at: str | None = Field(default=None, description="Most recent successful sync timestamp recorded for this dataset.")
+    last_error_at: str | None = Field(default=None, description="Most recent failed or degraded sync timestamp recorded for this dataset.")
+    last_error_message: str | None = Field(default=None, description="Most recent recorded sync error for this dataset.")
+    source_metadata: SourceMetadata | None = Field(default=None, description="Runtime source-selection metadata for observability and fallback inspection.")
 
 
 class Event(BaseModel):
@@ -203,7 +205,15 @@ class CompanyOverview(BaseModel):
                         "last_success_at": "2026-03-17T00:00:00Z",
                         "last_error_at": None,
                         "last_error_message": None,
-                        "source_metadata": {"selected_source": "tushare", "selected_source_priority": 100, "fallback_used": False, "attempted_sources": ["tushare"]},
+                        "source_metadata": {
+                            "selected_source": "tushare",
+                            "selected_source_priority": 100,
+                            "fallback_used": False,
+                            "attempted_sources": ["tushare"],
+                            "returned_sources": ["tushare"],
+                            "selection_reason": "primary_source_available",
+                            "fallback_reason": None,
+                        },
                     },
                 },
                 "latest_financial": {
@@ -235,7 +245,15 @@ class CompanyOverview(BaseModel):
                         "last_success_at": "2026-03-17T00:00:00Z",
                         "last_error_at": None,
                         "last_error_message": None,
-                        "source_metadata": {"selected_source": "tushare", "selected_source_priority": 100, "fallback_used": False, "attempted_sources": ["tushare"]},
+                        "source_metadata": {
+                            "selected_source": "tushare",
+                            "selected_source_priority": 100,
+                            "fallback_used": False,
+                            "attempted_sources": ["tushare"],
+                            "returned_sources": ["tushare"],
+                            "selection_reason": "financial_latest",
+                            "fallback_reason": None,
+                        },
                     },
                 },
                 "latest_price": {
@@ -265,7 +283,15 @@ class CompanyOverview(BaseModel):
                         "last_success_at": "2026-03-17T00:00:00Z",
                         "last_error_at": None,
                         "last_error_message": None,
-                        "source_metadata": {"selected_source": "akshare", "selected_source_priority": 90, "fallback_used": False, "attempted_sources": ["akshare", "tushare"]},
+                        "source_metadata": {
+                            "selected_source": "akshare",
+                            "selected_source_priority": 90,
+                            "fallback_used": False,
+                            "attempted_sources": ["akshare", "tushare"],
+                            "returned_sources": ["akshare"],
+                            "selection_reason": "highest_source_priority",
+                            "fallback_reason": None,
+                        },
                     },
                 },
                 "recent_events": {
@@ -301,7 +327,15 @@ class CompanyOverview(BaseModel):
                         "last_success_at": "2026-03-17T00:00:00Z",
                         "last_error_at": None,
                         "last_error_message": None,
-                        "source_metadata": {"selected_source": "cninfo", "selected_source_priority": 100, "fallback_used": False, "attempted_sources": ["cninfo", "exchange_search"]},
+                        "source_metadata": {
+                            "selected_source": "cninfo",
+                            "selected_source_priority": 100,
+                            "fallback_used": False,
+                            "attempted_sources": ["cninfo", "exchange_search"],
+                            "returned_sources": ["cninfo"],
+                            "selection_reason": "event_dedupe_by_source_priority",
+                            "fallback_reason": None,
+                        },
                     },
                 },
                 "risk_flags": {
@@ -325,7 +359,15 @@ class CompanyOverview(BaseModel):
                         "last_success_at": "2026-03-17T00:00:00Z",
                         "last_error_at": None,
                         "last_error_message": None,
-                        "source_metadata": {"selected_source": "derived", "selected_source_priority": 0, "fallback_used": False, "attempted_sources": ["derived"]},
+                        "source_metadata": {
+                            "selected_source": "derived",
+                            "selected_source_priority": 0,
+                            "fallback_used": False,
+                            "attempted_sources": ["derived"],
+                            "returned_sources": ["derived"],
+                            "selection_reason": "overview_rollup",
+                            "fallback_reason": None,
+                        },
                     },
                 },
                 "signals": {
@@ -350,7 +392,15 @@ class CompanyOverview(BaseModel):
                         "last_success_at": "2026-03-17T00:00:00Z",
                         "last_error_at": None,
                         "last_error_message": None,
-                        "source_metadata": {"selected_source": "derived", "selected_source_priority": 0, "fallback_used": False, "attempted_sources": ["derived"]},
+                        "source_metadata": {
+                            "selected_source": "derived",
+                            "selected_source_priority": 0,
+                            "fallback_used": False,
+                            "attempted_sources": ["derived"],
+                            "returned_sources": ["derived"],
+                            "selection_reason": "overview_rollup",
+                            "fallback_reason": None,
+                        },
                     },
                 },
             }
@@ -385,15 +435,15 @@ class StockPaginationDebug(BaseModel):
 
 
 class StockSectionDebug(BaseModel):
-    data_status: DataStatus
-    sources: list[PriceSourceDebug] = Field(default_factory=list)
+    data_status: DataStatus = Field(description="Section-level status rollup included in overview debug responses.")
+    sources: list[PriceSourceDebug] = Field(default_factory=list, description="Per-source fetch/debug details for the section.")
 
 
 class StockEndpointDebug(BaseModel):
-    endpoint: str
-    sources: list[PriceSourceDebug] = Field(default_factory=list)
-    pagination: StockPaginationDebug | None = None
-    sections: dict[str, StockSectionDebug] = Field(default_factory=dict)
+    endpoint: str = Field(description="Endpoint name associated with this debug payload.")
+    sources: list[PriceSourceDebug] = Field(default_factory=list, description="Top-level source fetch/debug details for the endpoint.")
+    pagination: StockPaginationDebug | None = Field(default=None, description="Pagination and sort metadata when the endpoint supports paged list output.")
+    sections: dict[str, StockSectionDebug] = Field(default_factory=dict, description="Section-level debug map used primarily by overview debug responses.")
 
 
 class PriceListDebugResponse(BaseModel):
@@ -429,6 +479,73 @@ class FinancialListDebugResponse(BaseModel):
 
 
 class OverviewDebugResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "ticker": "000001.SZ",
+                "data": {
+                    "ticker": "000001.SZ",
+                    "company": {"data": None, "data_status": {"status": "fresh", "ttl_hours": 24}},
+                    "latest_financial": {
+                        "data": None,
+                        "data_status": {
+                            "status": "partial",
+                            "ttl_hours": 24,
+                            "source": "tushare",
+                            "source_metadata": {
+                                "selected_source": "tushare",
+                                "fallback_used": False,
+                                "attempted_sources": ["tushare"],
+                                "returned_sources": ["tushare"],
+                            },
+                        },
+                    },
+                    "latest_price": {"data": None, "data_status": {"status": "missing", "ttl_hours": 24}},
+                    "recent_events": {"data": [], "data_status": {"status": "missing", "ttl_hours": 24}},
+                    "risk_flags": {"data": [], "data_status": {"status": "partial", "ttl_hours": 24}},
+                    "signals": {"data": [], "data_status": {"status": "partial", "ttl_hours": 24}},
+                },
+                "data_status": {
+                    "status": "partial",
+                    "ttl_hours": 24,
+                    "source": "derived",
+                    "source_metadata": {
+                        "selected_source": "derived",
+                        "fallback_used": False,
+                        "attempted_sources": ["derived"],
+                        "returned_sources": ["derived"],
+                    },
+                },
+                "debug": {
+                    "endpoint": "company_overview",
+                    "sources": [],
+                    "pagination": None,
+                    "sections": {
+                        "company": {"data_status": {"status": "fresh", "ttl_hours": 24}, "sources": []},
+                        "latest_financial": {
+                            "data_status": {
+                                "status": "partial",
+                                "ttl_hours": 24,
+                                "source": "tushare",
+                                "source_metadata": {
+                                    "selected_source": "tushare",
+                                    "fallback_used": False,
+                                    "attempted_sources": ["tushare"],
+                                    "returned_sources": ["tushare"],
+                                },
+                            },
+                            "sources": [],
+                        },
+                        "latest_price": {"data_status": {"status": "missing", "ttl_hours": 24}, "sources": []},
+                        "recent_events": {"data_status": {"status": "missing", "ttl_hours": 24}, "sources": []},
+                        "risk_flags": {"data_status": {"status": "partial", "ttl_hours": 24}, "sources": []},
+                        "signals": {"data_status": {"status": "partial", "ttl_hours": 24}, "sources": []},
+                    },
+                },
+            }
+        }
+    )
+
     ticker: str
     data: CompanyOverview
     data_status: DataStatus

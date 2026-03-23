@@ -21,53 +21,57 @@ Constraints:
 
 ## Current Task
 
-Harden event normalization and event-list stability with minimal necessary changes.
+Harden schema example stability for stock debug responses with minimal necessary changes.
 
 ### Scope
 
-1. Harden cross-source event dedupe
-- `cninfo` and `exchange_search` can describe the same disclosure with different URLs.
-- Current dedupe keys depend on normalized URL, which makes cross-source dedupe fragile and can keep duplicate event rows when the title/date are the same but URLs differ.
-- Improve event dedupe so semantically identical events from different sources are more likely to collapse to one normalized event.
-- Preserve source-priority selection semantics: when duplicates collapse, the higher-priority source should still win.
-- Keep the stable `event_type` taxonomy unchanged.
+1. Shrink `OverviewDebugResponse` example to a minimal stable contract example
+- `app/schemas/stock.py` currently carries a very large hand-written example for `OverviewDebugResponse`.
+- This is high-maintenance and likely to drift from implementation details over time.
+- Replace it with a shorter example that demonstrates the contract without encoding too many volatile field values.
+- Keep the example useful for readers of the OpenAPI schema.
+- The example should show structure, not a near-real full payload.
+- Keep only the minimum needed to demonstrate:
+  - `ticker`
+  - top-level `data_status.status`
+  - top-level `source_metadata` shape
+  - `debug.endpoint`
+  - the 6 overview debug section keys
+  - at least one section-level `data_status`
+- Remove high-drift details such as large business objects, many timestamps, long source arrays, and verbose message strings unless strictly needed.
+- Current review note:
+  - The latest attempt is still too detailed to pass.
+  - It still includes too many fixed timestamps, repeated full `data_status` objects, and detailed message/reason strings.
+  - The next revision should cut the example down again until it reads like a contract illustration, not a partial real payload.
 
-2. Tighten event ordering stability
-- Event ordering currently relies on a mix of `event_date`, `importance`, and `updated_at`.
-- Make the ordering deterministic for events with equal dates and equal priority, so pagination and snapshots do not depend on incidental insertion order.
-- Do not redesign the endpoint or add new sort fields.
+2. Add a focused regression test for schema/example drift
+- Add a targeted test that validates the stock debug schema example stays aligned with the current contract.
+- At minimum, assert:
+  - `debug.endpoint` matches the actual overview debug endpoint name
+  - the overview debug section keys are present
+  - `data_status.status` can represent `partial`
+  - the example retains `source_metadata` structure where expected
+- Prefer a narrow test over broad schema snapshot churn.
+- Keep the test aligned with the smaller example; do not make the test require a large detailed payload.
 
-3. Expand normalization coverage with focused tests
-- Add regression tests for:
-  - duplicate same-day events from different sources collapsing to one event
-  - higher-priority source winning when duplicate candidates differ in normalized fields
-  - deterministic ordering for same-date events
-  - event normalization preserving expected taxonomy and importance semantics
-- Prefer unit/service-level tests and only add API coverage where it proves endpoint stability.
-
-4. Keep repository and API contracts stable
-- Do not change `/company/{ticker}/events` response fields.
-- Do not change the stable event taxonomy documented in `docs/stock-data-model.md`.
-- Do not broaden generic web research features while doing this work.
+3. Keep stock contract and docs stable
+- Do not change endpoint paths.
+- Do not remove existing response fields.
+- Do not redesign the stock schemas.
+- Keep scope limited to schema/example drift prevention unless a tiny supporting fix is required.
 
 ## Suggested Files
 
-- `app/normalizers/stock.py`
-- `app/services/stock.py`
-- `app/collectors/exchange_search.py`
-- `app/services/stock.py`
-- `tests/test_stock_normalizers.py`
-- `tests/test_stock_service.py`
+- `app/schemas/stock.py`
 - `tests/test_stock_api.py`
-- `docs/stock-data-model.md`
+- `docs/codex-iteration-workflow.md`
 
 ## Acceptance Checklist
 
-- Cross-source duplicate events are normalized more consistently.
-- Higher-priority sources still win after dedupe.
-- Event ordering is deterministic for same-date items.
-- `/company/{ticker}/events` contract remains unchanged.
-- Existing event taxonomy remains unchanged.
+- `OverviewDebugResponse` example is substantially smaller and easier to keep stable.
+- A focused test guards against overview debug schema/example drift.
+- `debug.endpoint` and section structure remain aligned with the real response contract.
+- The example reads like a stable contract illustration rather than a hand-written full response.
 - Existing endpoint paths and response field names remain unchanged.
 - Tests were run.
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.schemas.stock import CompanyOverview
+from app.schemas.stock import CompanyOverview, OverviewDebugResponse
 from app.normalizers.stock import normalize_price_daily
 from app.schemas.search import SearchResult
 
@@ -314,6 +314,18 @@ def test_company_overview_contract_has_data_status_for_every_section() -> None:
     for section in ("company", "latest_financial", "latest_price", "recent_events", "risk_flags", "signals"):
         assert "data" in example[section]
         assert "data_status" in example[section]
+
+
+def test_overview_debug_schema_example_tracks_stable_contract() -> None:
+    example = OverviewDebugResponse.model_config["json_schema_extra"]["example"]
+
+    assert example["debug"]["endpoint"] == "company_overview"
+    assert set(example["debug"]["sections"]) == {"company", "latest_financial", "latest_price", "recent_events", "risk_flags", "signals"}
+    assert example["data_status"]["status"] == "partial"
+    assert example["data_status"]["source_metadata"]["selected_source"] == "derived"
+    assert example["data_status"]["source_metadata"]["attempted_sources"] == ["derived"]
+    assert example["debug"]["sections"]["latest_financial"]["data_status"]["source_metadata"]["attempted_sources"] == ["tushare"]
+    assert example["debug"]["sections"]["latest_financial"]["data_status"]["status"] == "partial"
 
 
 def test_company_overview_falls_back_when_company_profile_missing(monkeypatch) -> None:
@@ -1146,6 +1158,9 @@ def test_health_db_returns_repository_backend_status(monkeypatch) -> None:
 
 
 def test_health_sources_reports_source_configuration(monkeypatch) -> None:
+    monkeypatch.setattr("app.api.routes.settings.tushare_token", None)
+    monkeypatch.setattr("app.api.routes.settings.tushare_base_url", "https://api.tushare.pro")
+    monkeypatch.setattr("app.api.routes.settings.cninfo_announcements_url", "https://www.cninfo.com.cn/new/hisAnnouncement/query")
     client = TestClient(app)
 
     response = client.get("/health/sources")
@@ -1155,6 +1170,10 @@ def test_health_sources_reports_source_configuration(monkeypatch) -> None:
     assert payload["status"] == "ok"
     assert "tushare" in payload["sources"]
     assert "cninfo" in payload["sources"]
+    assert payload["sources"]["tushare"]["configured"] is False
+    assert payload["sources"]["tushare"]["base_url"] == "https://api.tushare.pro"
+    assert payload["sources"]["cninfo"]["configured"] is True
+    assert payload["sources"]["cninfo"]["url"] == "https://www.cninfo.com.cn/new/hisAnnouncement/query"
     assert payload["sources"]["akshare"]["configured"] is True
 
 
@@ -1189,6 +1208,7 @@ def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
     payload = response.json()
     assert payload["items"][0]["dataset"] == "company_profile"
     assert payload["items"][0]["status"] == "partial"
+    assert payload["items"][0]["last_error_at"] == "2026-03-16T23:59:00Z"
     assert payload["items"][0]["last_error_message"] == "upstream timeout"
     assert payload["items"][0]["records_written"] == 1
     assert payload["items"][0]["duration_ms"] == 120
