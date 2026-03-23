@@ -516,8 +516,44 @@ def test_company_overview_debug_is_main_observability_entrypoint(monkeypatch) ->
     assert payload["data"]["ticker"] == "000001.SZ"
     assert payload["data_status"]["source"] == "derived"
     assert payload["debug"]["endpoint"] == "company_overview"
+    assert set(payload["debug"]["sections"]) == {"company", "latest_financial", "latest_price", "recent_events", "risk_flags", "signals"}
+    assert payload["data_status"]["status"] == payload["debug"]["sections"]["risk_flags"]["data_status"]["status"]
     assert payload["debug"]["sections"]["latest_price"]["data_status"]["source"] == "akshare"
     assert payload["debug"]["sections"]["recent_events"]["sources"][0]["source"] == "cninfo"
+
+
+def test_company_overview_debug_rolls_up_stale_and_failed_section_states(monkeypatch) -> None:
+    class BoundaryOverviewService(FakeStockService):
+        def get_overview_with_debug(self, ticker: str, refresh: bool = False):
+            overview = self.get_overview(ticker, refresh=refresh)
+            return {
+                "ticker": "000001.SZ",
+                "data": overview,
+                "data_status": self._data_status("derived", status="failed", attempted_sources=["derived"], last_error_message="latest price unavailable"),
+                "debug": self._debug_payload(
+                    "company_overview",
+                    sections={
+                        "company": {"data_status": self._data_status("tushare", attempted_sources=["tushare"]), "sources": []},
+                        "latest_financial": {"data_status": self._data_status("tushare", status="stale", attempted_sources=["tushare"]), "sources": []},
+                        "latest_price": {"data_status": self._data_status("akshare", status="failed", attempted_sources=["akshare"], last_error_message="latest price unavailable"), "sources": []},
+                        "recent_events": {"data_status": self._data_status("cninfo", attempted_sources=["cninfo"]), "sources": []},
+                        "risk_flags": {"data_status": self._data_status("derived", status="failed", attempted_sources=["derived"], last_error_message="latest price unavailable"), "sources": []},
+                        "signals": {"data_status": self._data_status("derived", status="failed", attempted_sources=["derived"], last_error_message="latest price unavailable"), "sources": []},
+                    },
+                ),
+            }
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: BoundaryOverviewService())
+
+    client = TestClient(app)
+    response = client.get("/company/000001/overview?debug=true")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_status"]["status"] == "failed"
+    assert payload["debug"]["sections"]["latest_financial"]["data_status"]["status"] == "stale"
+    assert payload["debug"]["sections"]["latest_price"]["data_status"]["status"] == "failed"
+    assert payload["debug"]["sections"]["risk_flags"]["data_status"]["status"] == "failed"
 
 
 def test_prices_fall_back_to_tushare_when_akshare_fails() -> None:

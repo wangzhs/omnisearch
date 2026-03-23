@@ -108,6 +108,65 @@ def test_risk_flag_status_rolls_up_failed_and_stale_inputs() -> None:
     assert risk_status.source == "derived"
 
 
+def test_overview_status_rolls_up_partial_when_any_section_is_partial() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+
+    overview_status = service._build_overview_status(
+        company_status=service._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        financial_status=service._build_data_status(
+            source="tushare",
+            updated_at="2099-01-01T00:00:00Z",
+            cache_hit=True,
+            partial=True,
+            error_message="financial retry pending",
+        ),
+        price_status=service._build_data_status(source="akshare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        event_status=service._build_data_status(source="cninfo", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        risk_status=service._build_data_status(source="derived", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+    )
+
+    assert overview_status.status == "partial"
+    assert overview_status.source == "derived"
+    assert overview_status.error_message == "financial retry pending"
+
+
+def test_overview_status_rolls_up_stale_when_any_section_is_stale_and_none_failed() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+
+    overview_status = service._build_overview_status(
+        company_status=service._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        financial_status=service._build_data_status(source="tushare", updated_at="2000-01-01T00:00:00Z", cache_hit=True),
+        price_status=service._build_data_status(source="akshare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        event_status=service._build_data_status(source="cninfo", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        risk_status=service._build_data_status(source="derived", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+    )
+
+    assert overview_status.status == "stale"
+    assert overview_status.source == "derived"
+
+
+def test_overview_status_rolls_up_failed_when_critical_section_fails() -> None:
+    service = StockDataService(repository=type("Repo", (), {})())
+
+    overview_status = service._build_overview_status(
+        company_status=service._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        financial_status=service._build_data_status(source="tushare", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        price_status=service._build_data_status(
+            source="akshare",
+            updated_at=None,
+            cache_hit=False,
+            failed=True,
+            error_message="price upstream down",
+        ),
+        event_status=service._build_data_status(source="cninfo", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+        risk_status=service._build_data_status(source="derived", updated_at="2099-01-01T00:00:00Z", cache_hit=True),
+    )
+
+    assert overview_status.status == "failed"
+    assert overview_status.source == "derived"
+    assert overview_status.error_message == "price upstream down"
+
+
 def test_event_dedupe_prefers_higher_priority_source() -> None:
     service = StockDataService(repository=type("Repo", (), {})())
     low_priority = Event(
