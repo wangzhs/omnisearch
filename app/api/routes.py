@@ -59,10 +59,12 @@ def health_sources() -> dict:
 def health_sync(ticker: str | None = None) -> dict:
     service = get_stock_data_service()
     normalized_ticker = normalize_ticker_input(ticker) if ticker else None
+    items = service.repository.list_sync_state(ticker=normalized_ticker)
     return {
         "status": "ok",
         "ticker": normalized_ticker,
-        "items": service.repository.list_sync_state(ticker=normalized_ticker),
+        "summary": _build_sync_health_summary(items),
+        "items": items,
     }
 
 
@@ -480,6 +482,39 @@ def _filter_prices(items: list[PriceDaily], min_change_pct: float | None, max_ch
 def _paginate_prices(items: list[PriceDaily], sort_order: str, page: int, page_size: int) -> list[PriceDaily]:
     ordered = sorted(items, key=lambda item: _item_value(item, "trade_date") or "", reverse=(sort_order == "desc"))
     return _paginate_list(ordered, page=page, page_size=page_size)
+
+
+def _build_sync_health_summary(items: list[dict]) -> dict:
+    ok_count = sum(1 for item in items if item.get("status") == "ok")
+    partial_count = sum(1 for item in items if item.get("status") == "partial")
+    failed_count = sum(1 for item in items if item.get("status") == "failed")
+
+    if failed_count:
+        status = "failed"
+    elif partial_count:
+        status = "partial"
+    else:
+        status = "ok"
+
+    degraded_rows = [item for item in items if item.get("status") in {"partial", "failed"}]
+    latest_degraded = None
+    if degraded_rows:
+        latest_degraded = max(
+            degraded_rows,
+            key=lambda item: (
+                item.get("last_error_at") or "",
+                item.get("last_synced_at") or item.get("synced_at") or "",
+                item.get("dataset") or "",
+            ),
+        )
+
+    return {
+        "status": status,
+        "ok_count": ok_count,
+        "partial_count": partial_count,
+        "failed_count": failed_count,
+        "latest_degraded_dataset": latest_degraded.get("dataset") if latest_degraded else None,
+    }
 
 
 def _set_payload_items(payload, items: list) -> None:

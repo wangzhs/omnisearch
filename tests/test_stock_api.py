@@ -1242,6 +1242,13 @@ def test_health_sync_returns_repository_sync_state(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["summary"] == {
+        "status": "partial",
+        "ok_count": 0,
+        "partial_count": 1,
+        "failed_count": 0,
+        "latest_degraded_dataset": "company_profile",
+    }
     assert payload["items"][0]["dataset"] == "company_profile"
     assert payload["items"][0]["status"] == "partial"
     assert payload["items"][0]["last_error_at"] == "2026-03-16T23:59:00Z"
@@ -1270,6 +1277,8 @@ def test_health_sync_normalizes_ticker_filter(monkeypatch) -> None:
     payload = response.json()
     assert calls == ["000001.SZ"]
     assert payload["ticker"] == "000001.SZ"
+    assert payload["summary"]["status"] == "ok"
+    assert payload["summary"]["ok_count"] == 1
     assert payload["items"][0]["ticker"] == "000001.SZ"
 
 
@@ -1296,4 +1305,195 @@ def test_health_sync_without_ticker_returns_all_rows(monkeypatch) -> None:
     payload = response.json()
     assert calls == [None]
     assert payload["ticker"] is None
+    assert payload["summary"]["status"] == "ok"
+    assert payload["summary"]["ok_count"] == 2
     assert len(payload["items"]) == 2
+
+
+def test_health_sync_preserves_mixed_state_rows_for_normalized_ticker(monkeypatch) -> None:
+    calls = []
+
+    class FakeRepository:
+        def list_sync_state(self, ticker: str | None = None):
+            calls.append(ticker)
+            return [
+                {
+                    "dataset": "company_profile",
+                    "ticker": ticker,
+                    "status": "ok",
+                    "synced_at": "2026-03-17T00:00:00Z",
+                    "last_synced_at": "2026-03-17T00:00:00Z",
+                    "last_success_at": "2026-03-17T00:00:00Z",
+                    "last_error_at": "2026-03-16T23:59:00Z",
+                    "last_error_message": "previous timeout",
+                    "records_written": 1,
+                    "duration_ms": 100,
+                },
+                {
+                    "dataset": "event",
+                    "ticker": ticker,
+                    "status": "partial",
+                    "synced_at": "2026-03-17T00:05:00Z",
+                    "last_synced_at": "2026-03-17T00:05:00Z",
+                    "last_success_at": "2026-03-17T00:05:00Z",
+                    "last_error_at": "2026-03-17T00:05:00Z",
+                    "last_error_message": "cninfo timeout",
+                    "records_written": 4,
+                    "duration_ms": 220,
+                },
+            ]
+
+    class HealthStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthStockService())
+    client = TestClient(app)
+
+    response = client.get("/health/sync?ticker=000001")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert calls == ["000001.SZ"]
+    assert payload["ticker"] == "000001.SZ"
+    assert payload["summary"] == {
+        "status": "partial",
+        "ok_count": 1,
+        "partial_count": 1,
+        "failed_count": 0,
+        "latest_degraded_dataset": "event",
+    }
+    assert [item["dataset"] for item in payload["items"]] == ["company_profile", "event"]
+    assert payload["items"][0]["status"] == "ok"
+    assert payload["items"][0]["last_error_message"] == "previous timeout"
+    assert payload["items"][1]["status"] == "partial"
+    assert payload["items"][1]["last_error_message"] == "cninfo timeout"
+
+
+def test_health_sync_exposes_mixed_success_and_error_metadata_in_stable_order(monkeypatch) -> None:
+    class FakeRepository:
+        def list_sync_state(self, ticker: str | None = None):
+            return [
+                {
+                    "dataset": "company_profile",
+                    "ticker": "000001.SZ",
+                    "status": "ok",
+                    "synced_at": "2026-03-17T00:00:00Z",
+                    "last_synced_at": "2026-03-17T00:00:00Z",
+                    "last_success_at": "2026-03-17T00:00:00Z",
+                    "last_error_at": "2026-03-16T23:59:00Z",
+                    "last_error_message": "previous timeout",
+                    "records_written": 1,
+                    "duration_ms": 100,
+                },
+                {
+                    "dataset": "event",
+                    "ticker": "000001.SZ",
+                    "status": "partial",
+                    "synced_at": "2026-03-17T00:05:00Z",
+                    "last_synced_at": "2026-03-17T00:05:00Z",
+                    "last_success_at": "2026-03-17T00:05:00Z",
+                    "last_error_at": "2026-03-17T00:05:00Z",
+                    "last_error_message": "cninfo timeout",
+                    "records_written": 4,
+                    "duration_ms": 220,
+                },
+                {
+                    "dataset": "price_daily",
+                    "ticker": "000001.SZ",
+                    "status": "ok",
+                    "synced_at": "2026-03-17T00:10:00Z",
+                    "last_synced_at": "2026-03-17T00:10:00Z",
+                    "last_success_at": "2026-03-17T00:10:00Z",
+                    "last_error_at": None,
+                    "last_error_message": None,
+                    "records_written": 60,
+                    "duration_ms": 80,
+                },
+            ]
+
+    class HealthStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthStockService())
+    client = TestClient(app)
+
+    response = client.get("/health/sync?ticker=000001.SZ")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"] == {
+        "status": "partial",
+        "ok_count": 2,
+        "partial_count": 1,
+        "failed_count": 0,
+        "latest_degraded_dataset": "event",
+    }
+    assert [item["dataset"] for item in payload["items"]] == ["company_profile", "event", "price_daily"]
+    assert payload["items"][0]["status"] == "ok"
+    assert payload["items"][0]["last_error_message"] == "previous timeout"
+    assert payload["items"][1]["status"] == "partial"
+    assert payload["items"][1]["records_written"] == 4
+    assert payload["items"][2]["status"] == "ok"
+    assert payload["items"][2]["last_error_message"] is None
+
+
+def test_health_sync_summary_prefers_failed_and_latest_degraded_dataset(monkeypatch) -> None:
+    class FakeRepository:
+        def list_sync_state(self, ticker: str | None = None):
+            return [
+                {
+                    "dataset": "company_profile",
+                    "ticker": "000001.SZ",
+                    "status": "ok",
+                    "synced_at": "2026-03-17T00:00:00Z",
+                    "last_synced_at": "2026-03-17T00:00:00Z",
+                    "last_success_at": "2026-03-17T00:00:00Z",
+                    "last_error_at": "2026-03-16T23:59:00Z",
+                    "last_error_message": "previous timeout",
+                    "records_written": 1,
+                    "duration_ms": 100,
+                },
+                {
+                    "dataset": "event",
+                    "ticker": "000001.SZ",
+                    "status": "partial",
+                    "synced_at": "2026-03-17T00:05:00Z",
+                    "last_synced_at": "2026-03-17T00:05:00Z",
+                    "last_success_at": "2026-03-17T00:05:00Z",
+                    "last_error_at": "2026-03-17T00:05:00Z",
+                    "last_error_message": "cninfo timeout",
+                    "records_written": 4,
+                    "duration_ms": 220,
+                },
+                {
+                    "dataset": "financial_summary",
+                    "ticker": "000001.SZ",
+                    "status": "failed",
+                    "synced_at": "2026-03-17T00:10:00Z",
+                    "last_synced_at": "2026-03-17T00:10:00Z",
+                    "last_success_at": "2026-03-16T00:00:00Z",
+                    "last_error_at": "2026-03-17T00:10:00Z",
+                    "last_error_message": "upstream unavailable",
+                    "records_written": 0,
+                    "duration_ms": 350,
+                },
+            ]
+
+    class HealthStockService(FakeStockService):
+        repository = FakeRepository()
+
+    monkeypatch.setattr("app.api.routes.get_stock_data_service", lambda: HealthStockService())
+    client = TestClient(app)
+
+    response = client.get("/health/sync?ticker=000001.SZ")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"] == {
+        "status": "failed",
+        "ok_count": 1,
+        "partial_count": 1,
+        "failed_count": 1,
+        "latest_degraded_dataset": "financial_summary",
+    }
+    assert [item["dataset"] for item in payload["items"]] == ["company_profile", "event", "financial_summary"]

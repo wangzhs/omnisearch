@@ -21,46 +21,59 @@ Constraints:
 
 ## Current Task
 
-Harden `/health/sync` mixed-state observability coverage with minimal necessary changes.
+Stabilize `/health/sync` summary contract with explicit schema and documentation updates.
 
 ### Scope
 
-1. Tighten `/health/sync` status filtering coverage
-- Add focused tests for sync-state filtering and response semantics when rows contain mixed healthy and degraded states.
+1. Add an explicit response schema for `/health/sync`
+- Move the route away from an untyped `dict` response for this endpoint.
+- Add schema models for:
+  - sync row item
+  - sync summary
+  - sync response
 - Cover at least:
-  - `ticker` filtering with normalized input still returning degraded rows
-  - partial/degraded sync rows remaining visible in the response
-  - mixed success/error metadata staying stable in the payload
-- Prefer API-level tests in `tests/test_stock_api.py`.
+  - `summary.status`
+  - `ok_count`
+  - `partial_count`
+  - `failed_count`
+  - `latest_degraded_dataset`
 
-2. Tighten sync health aggregation checks
-- Add or tighten tests for the response shape when multiple dataset sync states exist for a ticker.
+2. Update stock API documentation for `/health/sync`
+- Document the new `summary` object in `docs/stock-api.md`.
+- Keep the documented semantics narrow and aligned with the implementation.
+
+3. Tighten API/schema coverage for the summary contract
+- Add focused API tests for `/health/sync`.
 - Cover at least:
-  - rows with `status=ok` and retained `last_error_message`
-  - rows with `status=partial`
-  - deterministic row ordering remaining intact
+  - response still serializes the same `items`
+  - `summary` shape matches the schema contract
+  - normalized ticker filtering still works
 
-3. Keep sync contract stable
-- Do not redesign `/health/sync` response fields.
+4. Keep sync contract stable
+- Do not redesign existing `/health/sync` row fields.
+- Do not remove or rename `items`.
+- Keep the current summary semantics unchanged unless a narrow correction is required.
 - Do not change ticker normalization semantics unless fixing a narrow bug.
 - Do not churn snapshots unless a contract change is intentional.
 
-4. Keep scope narrow
+5. Keep scope narrow
 - Do not broaden generic web research features.
-- Focus on observability contract hardening, not feature expansion.
+- Focus on observability value, not feature expansion.
 
 ## Suggested Files
 
 - `app/api/routes.py`
-- `app/db/sqlite.py`
+- `app/schemas/stock.py`
+- `docs/stock-api.md`
 - `tests/test_stock_api.py`
 - `tests/snapshots/`
 - `docs/codex-iteration-workflow.md`
 
 ## Acceptance Checklist
 
-- `/health/sync` tests cover mixed-state and degraded-row boundary cases.
-- Sync observability remains stable for normalized ticker filtering and mixed success/error metadata.
+- `/health/sync` has an explicit response schema.
+- Documentation reflects the current `summary` contract.
+- Existing `items` ordering and row fields remain unchanged.
 - Snapshots change only if the sync contract intentionally changed.
 - Existing sync response field names remain unchanged unless a bug fix requires a narrow correction.
 - Existing endpoint paths and response field names remain unchanged.
